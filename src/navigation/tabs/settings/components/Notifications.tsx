@@ -1,13 +1,5 @@
 import React, {useEffect, useCallback} from 'react';
-import {
-  Alert,
-  AppState,
-  AppStateStatus,
-  Linking,
-  LogBox,
-  DeviceEventEmitter,
-  Platform,
-} from 'react-native';
+import {Alert, Linking, LogBox, DeviceEventEmitter} from 'react-native';
 import {AppEffects} from '../../../../store/app';
 import {
   ActiveOpacity,
@@ -52,53 +44,33 @@ const Notifications = () => {
   }, [t]);
 
   const setNotificationValue = useCallback(
-    async (accepted: boolean) => {
+    async (isEnabled: boolean) => {
+      const changePermissions = () => {
+        dispatch(AppEffects.setNotifications(isEnabled));
+        dispatch(AppEffects.setConfirmTxNotifications(isEnabled));
+        dispatch(AppEffects.setAnnouncementsNotifications(isEnabled));
+      };
       const systemEnabled = await AppEffects.checkNotificationsPermissions();
-      if (systemEnabled) {
-        dispatch(AppEffects.setNotifications(accepted));
-        dispatch(AppEffects.setConfirmTxNotifications(accepted));
-        dispatch(AppEffects.setAnnouncementsNotifications(accepted));
-      } else {
-        if (accepted && Platform.OS === 'ios') {
-          const requestPermissions =
-            await AppEffects.requestNotificationsPermissions();
-          if (requestPermissions) {
-            dispatch(AppEffects.setNotifications(accepted));
-          } else {
-            openSettings();
-            dispatch(AppEffects.setNotifications(false));
-            dispatch(AppEffects.setConfirmTxNotifications(false));
-            dispatch(AppEffects.setAnnouncementsNotifications(false));
-          }
-        } else {
-          dispatch(AppEffects.setNotifications(false));
-          dispatch(AppEffects.setConfirmTxNotifications(false));
-          dispatch(AppEffects.setAnnouncementsNotifications(false));
+      if (!systemEnabled && isEnabled) {
+        const permissionGranted =
+          await AppEffects.requestNotificationsPermissions();
+        if (permissionGranted) {
+          changePermissions();
+          return;
         }
+        openSettings();
+      } else {
+        changePermissions();
       }
     },
     [dispatch, openSettings],
   );
 
   useEffect(() => {
-    function onAppStateChange(status: AppStateStatus) {
-      // status === 'active' when the app goes from background to foreground,
-      if (status === 'active') {
-        setNotificationValue(notificationsState.pushNotifications);
-      }
-    }
-    const subscriptionAppStateChange = AppState.addEventListener(
-      'change',
-      onAppStateChange,
-    );
-    return () => subscriptionAppStateChange.remove();
-  }, [dispatch, setNotificationValue, notificationsState]);
-
-  useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
       DeviceEmitterEvents.PUSH_NOTIFICATIONS,
-      ({accepted}) => {
-        setNotificationValue(accepted);
+      ({isEnabled}) => {
+        setNotificationValue(isEnabled);
       },
     );
     return () => subscription.remove();

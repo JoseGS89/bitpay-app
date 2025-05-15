@@ -5,49 +5,95 @@ import {
   ActiveOpacity,
 } from '../styled/Containers';
 import {RowContainer} from '../styled/Containers';
-import {H5, H7} from '../styled/Text';
+import {H5, H7, ListItemSubText} from '../styled/Text';
 import {CurrencyImage} from '../currency-image/CurrencyImage';
 import {GlobalSelectObj} from '../../navigation/wallet/screens/GlobalSelect';
 import styled from 'styled-components/native';
-import {LightBlack, NeutralSlate} from '../../styles/colors';
+import {Slate, Slate30, SlateDark} from '../../styles/colors';
 import AngleRightSvg from '../../../assets/img/angle-right.svg';
-import {useTranslation} from 'react-i18next';
+import {Img} from '../../navigation/tabs/home/components/Wallet';
+import {useTheme} from 'styled-components/native';
+import _ from 'lodash';
 
 interface Props {
   item: GlobalSelectObj;
+  hasSelectedChainFilterOption: boolean;
   emit: (item: GlobalSelectObj) => void;
 }
 
 export const AvailableWalletsPill = styled.View`
-  background-color: ${({theme: {dark}}) => (dark ? LightBlack : NeutralSlate)};
+  border-color: ${({theme: {dark}}) => (dark ? Slate : Slate30)};
+  border-width: 1px;
   flex-direction: row;
   border-radius: 40px;
   align-items: center;
   justify-content: center;
-  padding: 10px;
+  padding: 4px;
   margin-right: 10px;
 `;
 
-const GlobalSelectRow = ({item, emit}: Props) => {
-  const {t} = useTranslation();
-  const {currencyName, total, img, badgeImg} = item;
+export const AvailableChainContainer = styled.View`
+  align-items: center;
+  justify-content: center;
+  flex-direction: row;
+  padding: 4px;
+  margin-right: 10px;
+`;
 
+interface CurrencyBadgeListProps {
+  chainsImg: {
+    [key: string]: {
+      badgeUri?: string | ((props?: any) => React.ReactElement) | undefined;
+      badgeImg?: string | ((props?: any) => React.ReactElement) | undefined;
+      priority: number | undefined;
+    };
+  };
+}
+
+const CurrencyBadgeList: React.FC<CurrencyBadgeListProps> = ({chainsImg}) => {
+  const chainValues = _.orderBy(Object.values(chainsImg), 'priority', 'asc');
+  let _index = 0;
   return (
-    <RowContainer activeOpacity={ActiveOpacity} onPress={() => emit(item)}>
+    <>
+      {chainValues.map(({badgeUri, badgeImg}) => {
+        const img = badgeUri || badgeImg;
+        if (!img) {
+          return null;
+        }
+        _index = _index + 1;
+        const marginLeft = _index === 1 ? 1 : -6;
+        return (
+          <Img key={_.uniqueId()} isFirst={_index === 1} style={{marginLeft}}>
+            <CurrencyImage img={img} size={25} />
+          </Img>
+        );
+      })}
+    </>
+  );
+};
+
+const GlobalSelectRow = ({item, hasSelectedChainFilterOption, emit}: Props) => {
+  const theme = useTheme();
+  const {currencyName, currencyAbbreviation, total, img, chainsImg} = item;
+  return (
+    <RowContainer
+      noBorder={true}
+      activeOpacity={ActiveOpacity}
+      onPress={() => emit(item)}>
       <CurrencyImageContainer>
-        <CurrencyImage img={img} badgeUri={badgeImg} />
+        <CurrencyImage img={img} />
       </CurrencyImageContainer>
       <CurrencyColumn>
         <H5>{currencyName}</H5>
+        <ListItemSubText ellipsizeMode="tail" numberOfLines={1}>
+          {currencyAbbreviation.toUpperCase()}
+        </ListItemSubText>
       </CurrencyColumn>
-      {total > 1 && (
-        <AvailableWalletsPill>
-          <H7 medium={true}>
-            {total} {t('Wallets')}
-          </H7>
-        </AvailableWalletsPill>
-      )}
-
+      {!hasSelectedChainFilterOption ? (
+        <AvailableChainContainer>
+          <CurrencyBadgeList chainsImg={chainsImg} />
+        </AvailableChainContainer>
+      ) : null}
       <AngleRightSvg />
     </RowContainer>
   );

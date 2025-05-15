@@ -1,7 +1,7 @@
 import React, {useEffect, useState} from 'react';
 import Clipboard from '@react-native-clipboard/clipboard';
 import QRCode from 'react-native-qrcode-svg';
-import styled from 'styled-components/native';
+import styled, {css} from 'styled-components/native';
 import {useAppDispatch, useLogger} from '../../../utils/hooks';
 import {showBottomNotificationModal} from '../../../store/app/app.actions';
 import {BaseText, H4, Paragraph} from '../../../components/styled/Text';
@@ -10,9 +10,10 @@ import {BottomNotificationConfig} from '../../../components/modal/bottom-notific
 import {
   SheetContainer,
   ActiveOpacity,
+  CloseButtonContainer,
 } from '../../../components/styled/Containers';
 import haptic from '../../../components/haptic-feedback/haptic';
-import {BWCErrorMessage} from '../../../constants/BWCError';
+import {BWCErrorMessage, BWCErrorName} from '../../../constants/BWCError';
 import {CustomErrorMessage} from './ErrorMessages';
 import {
   Action,
@@ -28,6 +29,7 @@ import {
   sleep,
   getProtocolName,
   titleCasing,
+  getProtocolsName,
 } from '../../../utils/helper-methods';
 import {Status, Wallet} from '../../../store/wallet/wallet.models';
 import ReceiveAddressHeader, {
@@ -39,8 +41,8 @@ import {
 } from '../../../store/wallet/effects/address/address';
 import {
   GetProtocolPrefix,
-  IsERCToken,
-  IsUtxoCoin,
+  IsEVMChain,
+  IsUtxoChain,
 } from '../../../store/wallet/utils/currency';
 import {useTranslation} from 'react-i18next';
 import WarningSvg from '../../../../assets/img/warning.svg';
@@ -53,10 +55,11 @@ import {
   TitleContainer,
   viewOnBlockchain,
 } from './SendingToERC20Warning';
+import {TouchableOpacity} from '@components/base/TouchableOpacity';
 
 export const BchAddressTypes = ['Cash Address', 'Legacy'];
 
-const CopyToClipboard = styled.TouchableOpacity`
+const CopyToClipboard = styled(TouchableOpacity)`
   border: 1px solid #9ba3ae;
   border-radius: 4px;
   padding: 0 10px;
@@ -68,7 +71,7 @@ const CopyToClipboard = styled.TouchableOpacity`
 const AddressText = styled(BaseText)`
   font-size: 16px;
   color: ${({theme: {dark}}) => (dark ? NeutralSlate : '#6F7782')};
-  padding: 0 20px 0 10px;
+  padding: 0 20px 0 5px;
 `;
 
 const CopyImgContainer = styled.View`
@@ -110,10 +113,6 @@ const ReceiveAddressContainer = styled(SheetContainer)`
   min-height: 500px;
 `;
 
-const CloseButton = styled.TouchableOpacity`
-  margin: auto;
-`;
-
 const CloseButtonText = styled(Paragraph)`
   color: ${({theme: {dark}}) => (dark ? White : Action)};
 `;
@@ -138,21 +137,28 @@ const WarningTitle = styled(BaseText)`
   font-weight: bold;
 `;
 
-const WarningDescription = styled(BaseText)`
+const WarningDescription = styled(BaseText)<{isToken?: boolean}>`
   font-size: 14px;
   color: ${({theme: {dark}}) => (dark ? White : Black)};
   padding: 0px 10px;
-  border-bottom-width: 1px;
-  border-bottom-color: ${({theme: {dark}}) => (dark ? LightBlack : '#ECEFFD')};
+  ${({isToken}) =>
+    isToken &&
+    css`
+      padding-bottom: 20px;
+      border-bottom-width: 1px;
+      border-bottom-color: ${({theme: {dark}}) =>
+        dark ? LightBlack : '#ECEFFD'};
+    `};
 `;
 
 interface Props {
   isVisible: boolean;
   closeModal: () => void;
   wallet: Wallet;
+  context?: 'accountdetails' | 'globalselect';
 }
 
-const ReceiveAddress = ({isVisible, closeModal, wallet}: Props) => {
+const ReceiveAddress = ({isVisible, closeModal, wallet, context}: Props) => {
   const {t} = useTranslation();
   const dispatch = useAppDispatch();
   const logger = useLogger();
@@ -162,6 +168,7 @@ const ReceiveAddress = ({isVisible, closeModal, wallet}: Props) => {
   const [loading, setLoading] = useState(true);
   const [bchAddressType, setBchAddressType] = useState('Cash Address');
   const [bchAddress, setBchAddress] = useState('');
+  const [protocolPrefix, setProtocolPrefix] = useState('');
   const [wasInit, setWasInit] = useState(false);
   const [singleAddress, setSingleAddress] = useState(false);
 
@@ -225,8 +232,9 @@ const ReceiveAddress = ({isVisible, closeModal, wallet}: Props) => {
       )) as string;
       setLoading(false);
       if (currencyAbbreviation === 'bch') {
-        const protocolPrefix = GetProtocolPrefix(network, chain);
-        const formattedAddr = protocolPrefix + ':' + walletAddress;
+        const _protocolPrefix = GetProtocolPrefix(network, chain);
+        setProtocolPrefix(_protocolPrefix);
+        const formattedAddr = _protocolPrefix + ':' + walletAddress;
         setAddress(formattedAddr);
         setBchAddress(formattedAddr);
         setBchAddressType('Cash Address');
@@ -235,7 +243,7 @@ const ReceiveAddress = ({isVisible, closeModal, wallet}: Props) => {
       }
     } catch (createAddressErr: any) {
       switch (createAddressErr?.type) {
-        case 'INVALID_ADDRESS_GENERATED':
+        case BWCErrorName.INVALID_ADDRESS_GENERATED:
           logger.error(createAddressErr.error);
 
           if (retryCount < 3) {
@@ -250,7 +258,7 @@ const ReceiveAddress = ({isVisible, closeModal, wallet}: Props) => {
             );
           }
           break;
-        case 'MAIN_ADDRESS_GAP_REACHED':
+        case BWCErrorName.MAIN_ADDRESS_GAP_REACHED:
           showErrorMessage(
             CustomErrorMessage({
               errMsg: BWCErrorMessage(createAddressErr.error),
@@ -298,7 +306,7 @@ const ReceiveAddress = ({isVisible, closeModal, wallet}: Props) => {
     };
   }
 
-  const isUtxo = IsUtxoCoin(wallet?.currencyAbbreviation);
+  const isUtxo = IsUtxoChain(wallet?.chain);
 
   const _closeModal = () => {
     closeModal();
@@ -310,9 +318,12 @@ const ReceiveAddress = ({isVisible, closeModal, wallet}: Props) => {
   };
 
   return (
-    <SheetModal isVisible={isVisible} onBackdropPress={_closeModal}>
+    <SheetModal
+      modalLibrary={'bottom-sheet'}
+      isVisible={isVisible}
+      onBackdropPress={_closeModal}>
       <ReceiveAddressContainer>
-        {!singleAddress ? (
+        {!singleAddress && isUtxo ? (
           <ReceiveAddressHeader
             onPressRefresh={() => createAddress(true)}
             contextHandlers={headerContextHandlers}
@@ -328,8 +339,10 @@ const ReceiveAddress = ({isVisible, closeModal, wallet}: Props) => {
               <CopyImgContainer>
                 {!copied ? <CopySvg width={17} /> : <CopiedSvg width={17} />}
               </CopyImgContainer>
-              <AddressText numberOfLines={1} ellipsizeMode={'tail'}>
-                {address}
+              <AddressText numberOfLines={1} ellipsizeMode={'middle'}>
+                {protocolPrefix
+                  ? address.replace(protocolPrefix + ':', '')
+                  : address}
               </AddressText>
             </CopyToClipboard>
 
@@ -352,17 +365,35 @@ const ReceiveAddress = ({isVisible, closeModal, wallet}: Props) => {
           </LoadingContainer>
         )}
 
-        {IsERCToken(wallet.currencyAbbreviation, wallet.chain) ? (
+        {context &&
+        ['accountdetails', 'globalselect'].includes(context) &&
+        IsEVMChain(wallet.chain) ? (
           <WarningContainer>
             <WarningHeader>
               <WarningSvg />
-              <WarningDescription>
+              <WarningDescription isToken={wallet.credentials.token?.address}>
+                <WarningTitle>{t('Warning!')}</WarningTitle>
+                {'\n'}
+                {t(
+                  'Only receive tokens on PROTOCOLNAMES networks to avoid losing funds',
+                  {
+                    protocolNames: titleCasing(getProtocolsName()!),
+                  },
+                )}
+              </WarningDescription>
+            </WarningHeader>
+          </WarningContainer>
+        ) : (
+          <WarningContainer>
+            <WarningHeader>
+              <WarningSvg />
+              <WarningDescription isToken={wallet.credentials.token?.address}>
                 <WarningTitle>{t('Warning!')}</WarningTitle>
                 {'\n'}
                 {t(
                   'Receive only COIN on the PROTOCOLNAME Network to avoid losing funds.',
                   {
-                    coin: wallet.currencyAbbreviation,
+                    coin: wallet?.currencyAbbreviation?.toUpperCase(),
                     protocolName: titleCasing(
                       getProtocolName(wallet.chain, wallet.network)!,
                     ),
@@ -370,24 +401,28 @@ const ReceiveAddress = ({isVisible, closeModal, wallet}: Props) => {
                 )}
               </WarningDescription>
             </WarningHeader>
-            <ContractHeaderContainer>
-              <TitleContainer>{t('Contract Address')}</TitleContainer>
-              <LinkContainer>
-                <LinkIcon />
-                <ContractLink
-                  onPress={() => dispatch(viewOnBlockchain(wallet))}>
-                  {t('View Contract')}
-                </ContractLink>
-              </LinkContainer>
-            </ContractHeaderContainer>
-            <ContractAddressText>
-              {wallet.credentials.token?.address}
-            </ContractAddressText>
+            {wallet.credentials.token?.address ? (
+              <>
+                <ContractHeaderContainer>
+                  <TitleContainer>{t('Contract Address')}</TitleContainer>
+                  <LinkContainer>
+                    <LinkIcon />
+                    <ContractLink
+                      onPress={() => dispatch(viewOnBlockchain(wallet))}>
+                      {t('View Contract')}
+                    </ContractLink>
+                  </LinkContainer>
+                </ContractHeaderContainer>
+                <ContractAddressText>
+                  {wallet.credentials.token?.address}
+                </ContractAddressText>
+              </>
+            ) : null}
           </WarningContainer>
-        ) : null}
-        <CloseButton onPress={_closeModal}>
+        )}
+        <CloseButtonContainer onPress={_closeModal}>
           <CloseButtonText>{t('CLOSE')}</CloseButtonText>
-        </CloseButton>
+        </CloseButtonContainer>
       </ReceiveAddressContainer>
     </SheetModal>
   );

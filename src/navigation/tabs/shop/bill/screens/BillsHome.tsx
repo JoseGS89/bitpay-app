@@ -1,27 +1,37 @@
 import React, {useState} from 'react';
-import {NativeStackScreenProps} from '@react-navigation/native-stack';
-import {BillGroupParamList} from '../BillGroup';
 import {RefreshControl, ScrollView} from 'react-native';
-import {ScreenContainer} from '../../components/styled/ShopTabComponents';
-import {Bills} from '../../components/Bills';
+import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {useTheme} from 'styled-components/native';
+import {useTranslation} from 'react-i18next';
+import {BillGroupParamList, BillScreens} from '../BillGroup';
+import {Bills} from '../../components/Bills';
 import {SlateDark, White} from '../../../../../styles/colors';
 import {ShopEffects} from '../../../../../store/shop';
 import {useAppDispatch, useAppSelector} from '../../../../../utils/hooks';
 import {sleep} from '../../../../../utils/helper-methods';
+import {withErrorFallback} from '../../../../../navigation/tabs/TabScreenErrorFallback';
+import TabContainer from '../../../../../navigation/tabs/TabContainer';
+import {HeaderContainer} from '../../../../tabs/home/components/Styled';
+import {HeaderTitle} from '../../../../../components/styled/Text';
 
 const BillsHome = ({}: NativeStackScreenProps<
   BillGroupParamList,
-  'BillsHome'
+  BillScreens.BILLS_HOME
 >) => {
   const theme = useTheme();
+  const {t} = useTranslation();
   const dispatch = useAppDispatch();
+  const showArchaxBanner = useAppSelector(({APP}) => APP.showArchaxBanner);
   const user = useAppSelector(
     ({APP, BITPAY_ID}) => BITPAY_ID.user[APP.network],
   );
   const [refreshing, setRefreshing] = useState(false);
+
   return (
-    <ScreenContainer>
+    <TabContainer>
+      <HeaderContainer>
+        <HeaderTitle>{t('Pay Bills')}</HeaderTitle>
+      </HeaderContainer>
       <ScrollView
         refreshControl={
           user ? (
@@ -43,8 +53,8 @@ const BillsHome = ({}: NativeStackScreenProps<
         }>
         <Bills />
       </ScrollView>
-    </ScreenContainer>
+    </TabContainer>
   );
 };
 
-export default BillsHome;
+export default withErrorFallback(BillsHome);

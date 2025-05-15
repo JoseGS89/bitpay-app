@@ -5,6 +5,7 @@ import {
   failedGetTokenOptions,
   successGetCustomTokenOptions,
   successGetTokenOptions,
+  successImport,
 } from '../../wallet.actions';
 import {
   BitpaySupportedTokens,
@@ -19,7 +20,13 @@ import {
 import {
   addTokenChainSuffix,
   getCurrencyAbbreviation,
+  getEVMFeeCurrency,
 } from '../../../../utils/helper-methods';
+import {GetProtocolPrefix} from '../../utils/currency';
+import {AppActions} from '../../../app';
+import {buildWalletObj, mapAbbreviationAndName} from '../../utils/wallet';
+import merge from 'lodash.merge';
+import {BitpaySupportedTokenOptsByAddress} from '../../../../constants/tokens';
 
 export const startGetTokenOptions =
   (): Effect<Promise<void>> => async dispatch => {
@@ -52,6 +59,7 @@ export const startGetTokenOptions =
         }),
       );
       dispatch(LogActions.info('successful [startGetTokenOptions]'));
+      dispatch(AppActions.appTokensDataLoaded());
     } catch (e) {
       let errorStr;
       if (e instanceof Error) {
@@ -61,6 +69,7 @@ export const startGetTokenOptions =
       }
       dispatch(failedGetTokenOptions());
       dispatch(LogActions.error(`failed [startGetTokenOptions]: ${errorStr}`));
+      dispatch(AppActions.appTokensDataLoaded());
     }
   };
 
@@ -110,6 +119,7 @@ const populateTokenInfo = ({
     name: token.name.replace('(PoS)', '').trim(),
     chain,
     coin: token.symbol.toLowerCase(),
+    feeCurrency: getEVMFeeCurrency(chain),
     logoURI: token.logoURI,
     address: token.address,
     unitInfo: {
@@ -129,7 +139,11 @@ const populateTokenInfo = ({
     },
     paymentInfo: {
       paymentCode: 'EIP681b',
-      protocolPrefix: {livenet: chain, testnet: chain},
+      protocolPrefix: {
+        livenet: GetProtocolPrefix(chain, 'livenet'),
+        testnet: GetProtocolPrefix(chain, 'testnet'),
+        regtest: GetProtocolPrefix(chain, 'regtest'),
+      },
       ratesApi: '',
       blockExplorerUrls: EVM_BLOCKCHAIN_EXPLORERS[chain].livenet,
       blockExplorerUrlsTestnet: EVM_BLOCKCHAIN_EXPLORERS[chain].testnet,
@@ -164,6 +178,48 @@ export const startCustomTokensMigration =
         addCustomTokenOption(customToken, chain);
       });
       dispatch(LogActions.info('success [startCustomTokensMigration]}'));
+      return resolve();
+    });
+  };
+
+export const startPolMigration =
+  (): Effect<Promise<void>> =>
+  async (dispatch, getState): Promise<void> => {
+    return new Promise(async resolve => {
+      dispatch(LogActions.info('[startPolMigration] - starting...'));
+      const {keys, tokenOptionsByAddress, customTokenOptionsByAddress} =
+        getState().WALLET;
+      const tokenOpts = {
+        ...BitpaySupportedTokenOptsByAddress,
+        ...tokenOptionsByAddress,
+        ...customTokenOptionsByAddress,
+      };
+      Object.values(keys).forEach(key => {
+        key.wallets = key.wallets.map(wallet => {
+          const {currencyAbbreviation, currencyName} = dispatch(
+            mapAbbreviationAndName(
+              wallet.credentials.coin,
+              wallet.credentials.chain,
+              wallet.credentials?.token?.address,
+            ),
+          );
+          return merge(
+            wallet,
+            buildWalletObj({
+              ...wallet.credentials,
+              ...wallet,
+              currencyAbbreviation,
+              currencyName,
+            }),
+          );
+        });
+        dispatch(
+          successImport({
+            key,
+          }),
+        );
+      });
+      dispatch(LogActions.info('success [startPolMigration]}'));
       return resolve();
     });
   };

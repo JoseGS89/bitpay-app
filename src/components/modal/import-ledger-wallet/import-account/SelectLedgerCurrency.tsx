@@ -18,14 +18,13 @@ import {
   startImportFromHardwareWallet,
 } from '../../../../store/wallet/effects';
 import {Wallet} from '../../../../store/wallet/wallet.models';
-import {Warning75, White} from '../../../../styles/colors';
 import {getDerivationStrategy, sleep} from '../../../../utils/helper-methods';
 import {
   useAppDispatch,
   useAppSelector,
   useLogger,
 } from '../../../../utils/hooks';
-import {ButtonState} from '../../../button/Button';
+import Button, {ButtonState} from '../../../button/Button';
 import {H4, H5, ListItemSubText, Paragraph} from '../../../styled/Text';
 import {
   DescriptionRow,
@@ -38,7 +37,7 @@ import {
   getLedgerErrorMessage,
   prepareLedgerApp,
 } from '../utils';
-import {IsUtxoCoin} from '../../../../store/wallet/utils/currency';
+import {IsUtxoChain} from '../../../../store/wallet/utils/currency';
 import axios from 'axios';
 import {buildKeyObj} from '../../../../store/wallet/utils/wallet';
 import {
@@ -54,6 +53,7 @@ import BitpaySvg from '../../../../../assets/img/wallet/transactions/bitpay.svg'
 import {BASE_BITCORE_URL} from '../../../../constants/config';
 import {startUpdateAllWalletStatusForKey} from '../../../../store/wallet/effects/status/status';
 import RadiatingLineAnimation from './RadiatingLineAnimation';
+import {ErrorDescriptionColumn} from '../components/ErrorDescriptionColumn';
 
 interface Props {
   transport: Transport;
@@ -62,9 +62,10 @@ interface Props {
   >;
   onDisconnect: () => Promise<void>;
   onScannedCompleted: (
-    selectedCurrency: string,
+    selectedChain: string,
     scannedWalletsIds?: string[],
   ) => void;
+  onAddByDerivationPathSelected: () => void;
 }
 
 export interface BaseAccountParams {
@@ -77,16 +78,19 @@ export interface UtxoAccountParams extends BaseAccountParams {
   currencyId: string;
   transportCurrency: string;
   currencySymbol: 'btc' | 'bch' | 'ltc' | 'doge';
+  chain: 'btc' | 'bch' | 'ltc' | 'doge';
   derivationInformation: {format: AddressFormat | undefined; purpose: string}[];
 }
 
 export interface EVMAccountParams extends BaseAccountParams {
   currencySymbol: 'eth' | 'matic';
+  chain: 'eth' | 'matic' | 'base' | 'op' | 'arb';
   purpose: string;
 }
 
 export interface XrpAccountParams extends BaseAccountParams {
   currencySymbol: 'xrp';
+  chain: 'xrp';
   purpose: string;
 }
 
@@ -122,6 +126,7 @@ export const currencyConfigs: {[key: string]: CurrencyConfigFn} = {
       ],
       coin: network === Network.mainnet ? "0'" : "1'",
       currencySymbol: 'btc',
+      chain: 'btc',
     };
   },
   bch: network => {
@@ -138,6 +143,7 @@ export const currencyConfigs: {[key: string]: CurrencyConfigFn} = {
       ],
       coin: "145'",
       currencySymbol: 'bch',
+      chain: 'bch',
     };
   },
   ltc: network => {
@@ -166,6 +172,7 @@ export const currencyConfigs: {[key: string]: CurrencyConfigFn} = {
       ],
       coin: "2'",
       currencySymbol: 'ltc',
+      chain: 'ltc',
     };
   },
   doge: network => {
@@ -182,25 +189,59 @@ export const currencyConfigs: {[key: string]: CurrencyConfigFn} = {
       ],
       coin: "3'",
       currencySymbol: 'doge',
+      chain: 'doge',
     };
   },
   eth: network => {
     const isMainnet = network === Network.mainnet;
     return {
-      appName: isMainnet ? 'Ethereum' : 'Ethereum Goerli',
+      appName: isMainnet ? 'Ethereum' : 'Ethereum Sepolia',
       network,
       purpose: "44'",
       coin: isMainnet ? "60'" : "1'",
       currencySymbol: 'eth',
+      chain: 'eth',
     };
   },
   matic: network => {
+    const isMainnet = network === Network.mainnet;
     return {
-      appName: 'Polygon',
+      appName: isMainnet ? 'Polygon' : 'Polygon Amoy',
       network,
       purpose: "44'",
       coin: "60'",
       currencySymbol: 'matic',
+      chain: 'matic',
+    };
+  },
+  base: network => {
+    return {
+      appName: 'Ethereum',
+      network,
+      purpose: "44'",
+      coin: "60'",
+      currencySymbol: 'eth',
+      chain: 'base',
+    };
+  },
+  arb: network => {
+    return {
+      appName: 'Ethereum',
+      network,
+      purpose: "44'",
+      coin: "60'",
+      currencySymbol: 'eth',
+      chain: 'arb',
+    };
+  },
+  op: network => {
+    return {
+      appName: 'Ethereum',
+      network,
+      purpose: "44'",
+      coin: "60'",
+      currencySymbol: 'eth',
+      chain: 'op',
     };
   },
   xrp: network => {
@@ -210,6 +251,7 @@ export const currencyConfigs: {[key: string]: CurrencyConfigFn} = {
       purpose: "44'",
       coin: "144'",
       currencySymbol: 'xrp',
+      chain: 'xrp',
     };
   },
 };
@@ -223,65 +265,73 @@ const CurrencyListContainer = styled.View`
 
 const ScrollView = styled.ScrollView``;
 
-const ErrParagraph = styled(Paragraph)`
-  background-color: ${Warning75};
-  color: ${White};
-  border-radius: 12px;
-  padding: 20px;
-`;
-
-const CURRENCIES = [
+const CHAINS = [
   {
-    coin: 'btc',
+    chain: 'btc',
     label: 'Bitcoin',
     img: CurrencyListIcons.btc,
     isTestnetSupported: true,
   },
   {
-    coin: 'eth',
+    chain: 'eth',
     label: 'Ethereum',
     img: CurrencyListIcons.eth,
     isTestnetSupported: false,
   },
   {
-    coin: 'matic',
+    chain: 'matic',
     label: 'Polygon',
     img: CurrencyListIcons.matic,
     isTestnetSupported: false,
   },
   {
-    coin: 'xrp',
+    chain: 'arb',
+    label: 'Arbitrum',
+    img: CurrencyListIcons.arb,
+    isTestnetSupported: false,
+  },
+  {
+    chain: 'base',
+    label: 'Base',
+    img: CurrencyListIcons.base,
+    isTestnetSupported: false,
+  },
+  {
+    chain: 'op',
+    label: 'Optimism',
+    img: CurrencyListIcons.op,
+    isTestnetSupported: false,
+  },
+  {
+    chain: 'xrp',
     label: 'XRP',
     img: CurrencyListIcons.xrp,
     isTestnetSupported: false,
   },
   {
-    coin: 'bch',
+    chain: 'bch',
     label: 'Bitcoin Cash',
     img: CurrencyListIcons.bch,
     isTestnetSupported: false,
   },
   {
-    coin: 'ltc',
+    chain: 'ltc',
     label: 'Litecoin',
     img: CurrencyListIcons.ltc,
     isTestnetSupported: false,
   },
   {
-    coin: 'doge',
+    chain: 'doge',
     label: 'Dogecoin',
     img: CurrencyListIcons.doge,
     isTestnetSupported: false,
   },
 ];
 
-const TESTNET_SUPPORT_MAP = CURRENCIES.reduce<Record<string, boolean>>(
-  (acc, c) => {
-    acc[c.coin] = c.isTestnetSupported;
-    return acc;
-  },
-  {},
-);
+const TESTNET_SUPPORT_MAP = CHAINS.reduce<Record<string, boolean>>((acc, c) => {
+  acc[c.chain] = c.isTestnetSupported;
+  return acc;
+}, {});
 
 export const SelectLedgerCurrency: React.FC<Props> = props => {
   const dispatch = useAppDispatch();
@@ -312,23 +362,25 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
    * Fetch raw data for a COIN transaction by ID.
    *
    * @param address
-   * @param coin The cryptocurrency symbol (e.g., btc, ltc, doge).
+   * @param chain The cryptocurrency symbol (e.g., btc, ltc, doge).
    * @param network
    * @returns transaction data as a hex string
    */
   const fetchAddressActivity = async (
     address: string,
-    coin: string,
+    chain: string,
     network: Network,
   ): Promise<boolean> => {
+    // @ts-ignore
     if (_fetchTxCache[network][address]) {
+      // @ts-ignore
       return _fetchTxCache[network][address];
     }
     const url = `${
       // @ts-ignore
-      BASE_BITCORE_URL[coin.toLowerCase()]
-    }/${coin.toUpperCase()}/mainnet/address/${address}${
-      coin.toLowerCase() === 'xrp' ? '' : '/txs'
+      BASE_BITCORE_URL[chain.toLowerCase()]
+    }/${chain.toUpperCase()}/mainnet/address/${address}${
+      chain.toLowerCase() === 'xrp' ? '' : '/txs'
     }`;
     const apiResponse = await axios.get<any>(url);
     const finalTxCount = apiResponse?.data?.length;
@@ -337,6 +389,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
       throw new Error(`No activity found for address: ${address}`);
     }
     const hasActivity = finalTxCount > 0;
+    // @ts-ignore
     _fetchTxCache[network][address] = hasActivity;
     return hasActivity;
   };
@@ -346,12 +399,14 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
     network,
     purpose,
     coin,
+    chain,
     currencySymbol,
   }: {
     appName: SupportedLedgerAppNames;
     network: Network;
     purpose: string;
     coin: string;
+    chain: 'xrp';
     currencySymbol: 'xrp';
   }) => {
     try {
@@ -386,11 +441,12 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
         const {publicKey, address} = await xrp.getAddress(
           `${purpose}/${coin}/${account}/0/0`,
         ); // we only check if the first address has activity
+        logger.debug(`publicKey: ${publicKey} - address: ${address}`);
         logger.debug(
-          `Fetching address activity for: ${address} - ${currencySymbol} - ${network} - ${derivationStrategy}`,
+          `Fetching address activity for: ${address} - ${currencySymbol} - ${chain} - ${network} - ${derivationStrategy}`,
         );
         checkPromises.push(
-          fetchAddressActivity(address, currencySymbol, network)
+          fetchAddressActivity(address, chain, network)
             .then((hasAddressActivity: boolean) => {
               if (hasAddressActivity) {
                 logger.debug(`${address}: has address activity`);
@@ -414,7 +470,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
       const results = await Promise.all(checkPromises);
       if (results.every(result => !result)) {
         logger.debug('No active addresses found.');
-        props.onScannedCompleted(currencySymbol);
+        props.onScannedCompleted(chain);
         return;
       }
 
@@ -442,6 +498,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
                   publicKey,
                   accountPath: path,
                   coin: currencySymbol,
+                  chain,
                   derivationStrategy,
                   accountNumber: Number(accountIndex),
                   network,
@@ -472,10 +529,14 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
 
       // wait for scanning to finish to perform this action
       if (!newWallets[0]?.isScanning) {
-        await dispatch(startGetRates({force: true}));
-        await dispatch(startUpdateAllWalletStatusForKey({key, force: true}));
-        await sleep(1000);
-        await dispatch(updatePortfolioBalance());
+        try {
+          await dispatch(startGetRates({force: true}));
+          await dispatch(startUpdateAllWalletStatusForKey({key, force: true}));
+          await sleep(1000);
+          await dispatch(updatePortfolioBalance());
+        } catch (error) {
+          // ignore error
+        }
       }
       dispatch(
         setHomeCarouselConfig({
@@ -485,7 +546,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
       );
 
       props.onScannedCompleted(
-        currencySymbol,
+        chain,
         newWallets.map(wallet => wallet.id),
       );
     } catch (err) {
@@ -504,6 +565,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
     network,
     derivationInformation,
     coin,
+    chain,
     currencySymbol,
   }: {
     currencyId: string;
@@ -515,6 +577,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
       purpose: string;
     }[];
     coin: string;
+    chain: 'btc' | 'bch' | 'ltc' | 'doge';
     currencySymbol: 'btc' | 'bch' | 'ltc' | 'doge';
   }) => {
     try {
@@ -566,12 +629,13 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
               path,
               xpubVersion,
             });
+            logger.debug(`publicKey: ${xPubKey} - address: ${address}`);
             logger.debug(
-              `Fetching address activity for: ${address} - ${currencySymbol} - ${network} - ${derivationStrategy}`,
+              `Fetching address activity for: ${address} - ${currencySymbol} - ${chain} - ${network} - ${derivationStrategy}`,
             );
 
             checkPromises.push(
-              fetchAddressActivity(address, currencySymbol, network)
+              fetchAddressActivity(address, chain, network)
                 .then(hasAddressActivity => {
                   if (hasAddressActivity) {
                     logger.debug(`${address}: has address activity`);
@@ -597,7 +661,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
         const results = await Promise.all(checkPromises);
         if (results.every(result => !result)) {
           logger.debug('No active addresses found');
-          props.onScannedCompleted(currencySymbol);
+          props.onScannedCompleted(chain);
           return;
         }
 
@@ -624,6 +688,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
                     xPubKey,
                     accountPath: path,
                     coin: currencySymbol,
+                    chain,
                     derivationStrategy,
                     accountNumber: Number(accountIndex),
                     network,
@@ -653,10 +718,16 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
         );
         // wait for scanning to finish to perform this action
         if (!newWallets[0]?.isScanning) {
-          await dispatch(startGetRates({force: true}));
-          await dispatch(startUpdateAllWalletStatusForKey({key, force: true}));
-          await sleep(1000);
-          await dispatch(updatePortfolioBalance());
+          try {
+            await dispatch(startGetRates({force: true}));
+            await dispatch(
+              startUpdateAllWalletStatusForKey({key, force: true}),
+            );
+            await sleep(1000);
+            await dispatch(updatePortfolioBalance());
+          } catch (error) {
+            // ignore error
+          }
         }
         dispatch(
           setHomeCarouselConfig({
@@ -666,7 +737,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
         );
 
         props.onScannedCompleted(
-          currencySymbol,
+          chain,
           newWallets.map(wallet => wallet.id),
         );
       }
@@ -684,6 +755,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
     network,
     purpose,
     coin,
+    chain,
     currencySymbol,
   }: {
     appName: SupportedLedgerAppNames;
@@ -691,6 +763,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
     purpose: string;
     coin: string;
     currencySymbol: 'eth' | 'matic';
+    chain: 'eth' | 'matic' | 'op' | 'base' | 'arb';
   }) => {
     try {
       logger.debug('Preparing app... approve should be requested soon');
@@ -723,12 +796,13 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
         const {publicKey, address} = await eth.getAddress(
           `${purpose}/${coin}/${account}/0/0`,
         ); // we only check if the first address has activity
+        logger.debug(`publicKey: ${publicKey} - address: ${address}`);
         logger.debug(
-          `Fetching address activity for: ${address} - ${currencySymbol} - ${network} - ${derivationStrategy}`,
+          `Fetching address activity for: ${address} - ${currencySymbol} - ${chain} - ${network} - ${derivationStrategy}`,
         );
 
         checkPromises.push(
-          fetchAddressActivity(address, currencySymbol, network)
+          fetchAddressActivity(address, chain, network)
             .then(hasAddressActivity => {
               if (hasAddressActivity) {
                 logger.debug(`${address}: has address activity`);
@@ -753,7 +827,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
       const results = await Promise.all(checkPromises);
       if (results.every(result => !result)) {
         logger.debug('No active addresses found');
-        props.onScannedCompleted(currencySymbol);
+        props.onScannedCompleted(chain);
         return;
       }
 
@@ -780,6 +854,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
                   publicKey,
                   accountPath: path,
                   coin: currencySymbol,
+                  chain,
                   derivationStrategy,
                   accountNumber: Number(accountIndex),
                   network,
@@ -810,10 +885,14 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
       );
       // wait for scanning to finish to perform this action
       if (!newWallets[0]?.isScanning) {
-        await dispatch(startGetRates({force: true}));
-        await dispatch(startUpdateAllWalletStatusForKey({key, force: true}));
-        await sleep(1000);
-        await dispatch(updatePortfolioBalance());
+        try {
+          await dispatch(startGetRates({force: true}));
+          await dispatch(startUpdateAllWalletStatusForKey({key, force: true}));
+          await sleep(1000);
+          await dispatch(updatePortfolioBalance());
+        } catch (error) {
+          // ignore error
+        }
       }
       dispatch(
         setHomeCarouselConfig({
@@ -823,7 +902,7 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
       );
 
       props.onScannedCompleted(
-        currencySymbol,
+        chain,
         newWallets.map(wallet => wallet.id),
       );
     } catch (err) {
@@ -835,29 +914,29 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
     }
   };
 
-  const importLedgerAccount = async (currency: string, network: Network) => {
-    const configFn = currencyConfigs[currency];
+  const importLedgerAccount = async (chain: string, network: Network) => {
+    const configFn = currencyConfigs[chain];
     if (!configFn) {
-      setError(`Unsupported currency: ${currency.toUpperCase()}`);
+      setError(`Unsupported chain: ${chain.toUpperCase()}`);
       return;
     }
     const params = configFn(network);
-    if (IsUtxoCoin(currency)) {
+    if (IsUtxoChain(chain)) {
       return importUtxoAccount(params as UtxoAccountParams);
     }
-    if (['eth', 'matic'].includes(currency)) {
+    if (['eth', 'matic', 'op', 'arb', 'base'].includes(chain)) {
       return importEVMAccount(params as EVMAccountParams);
     }
-    if (currency === 'xrp') {
+    if (chain === 'xrp') {
       return importXrpAccount(params as XrpAccountParams);
     }
   };
 
-  const onContinue = async (selectedCurrency: string) => {
+  const onContinue = async (selectedChain: string) => {
     setError('');
     setContinueButtonState('loading');
     const network = useTestnet ? Network.testnet : Network.mainnet;
-    await importLedgerAccount(selectedCurrency, network);
+    await importLedgerAccount(selectedChain, network);
     setContinueButtonState(null);
   };
 
@@ -874,14 +953,12 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
               )}
             </>
           ) : (
-            <H4>Choose Currency to Import</H4>
+            <H4>Choose Crypto to Import</H4>
           )}
         </Header>
 
         {error && error !== 'user denied transaction' && !isLoading ? (
-          <DescriptionRow>
-            <ErrParagraph>{error}</ErrParagraph>
-          </DescriptionRow>
+          <ErrorDescriptionColumn error={error} />
         ) : null}
 
         {isLoading ? (
@@ -893,48 +970,55 @@ export const SelectLedgerCurrency: React.FC<Props> = props => {
                 </Paragraph>
               ) : (
                 <Paragraph style={{textAlign: 'center'}}>
-                  Looking for activity... Please wait...
+                  Please wait...
                 </Paragraph>
               )}
             </DescriptionRow>
             {isPromptOpenApp ? (
               <IconRow>
-                <BitpaySvg />
+                <BitpaySvg width={60} height={60} />
               </IconRow>
             ) : (
               <RadiatingLineAnimation icon={BitpaySvg} height={60} width={60} />
             )}
           </>
         ) : (
-          <CurrencyListContainer>
-            {CURRENCIES.map((c, index) => (
-              <RowContainerWithoutBorders
-                onPress={() => onContinue(c.coin)}
-                key={index}>
-                <CurrencyImageContainer>
-                  <CurrencyImage img={c.img} />
-                </CurrencyImageContainer>
+          <>
+            <CurrencyListContainer>
+              {CHAINS.map((c, index) => (
+                <RowContainerWithoutBorders
+                  onPress={() => onContinue(c.chain)}
+                  key={index}>
+                  <CurrencyImageContainer>
+                    <CurrencyImage img={c.img} />
+                  </CurrencyImageContainer>
 
-                <CurrencyColumn>
-                  <Row>
-                    <H5 ellipsizeMode="tail" numberOfLines={1}>
-                      {c.label}
-                    </H5>
-                  </Row>
-                  <Row style={{alignItems: 'center'}}>
-                    <ListItemSubText
-                      ellipsizeMode="tail"
-                      numberOfLines={1}
-                      style={{marginTop: Platform.OS === 'ios' ? 2 : 0}}>
-                      {c.coin.toUpperCase()}
-                    </ListItemSubText>
-                  </Row>
-                </CurrencyColumn>
-                <AngleRightSvg />
-                <Hr />
-              </RowContainerWithoutBorders>
-            ))}
-          </CurrencyListContainer>
+                  <CurrencyColumn>
+                    <Row>
+                      <H5 ellipsizeMode="tail" numberOfLines={1}>
+                        {c.label}
+                      </H5>
+                    </Row>
+                    <Row style={{alignItems: 'center'}}>
+                      <ListItemSubText
+                        ellipsizeMode="tail"
+                        numberOfLines={1}
+                        style={{marginTop: Platform.OS === 'ios' ? 2 : 0}}>
+                        {c.chain.toUpperCase()}
+                      </ListItemSubText>
+                    </Row>
+                  </CurrencyColumn>
+                  <AngleRightSvg />
+                  <Hr />
+                </RowContainerWithoutBorders>
+              ))}
+            </CurrencyListContainer>
+            <Button
+              buttonType={'link'}
+              onPress={props.onAddByDerivationPathSelected}>
+              Add by Derivation Path
+            </Button>
+          </>
         )}
       </Wrapper>
     </ScrollView>

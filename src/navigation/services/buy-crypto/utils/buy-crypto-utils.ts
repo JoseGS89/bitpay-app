@@ -29,7 +29,7 @@ import {
 } from './transak-utils';
 import pickBy from 'lodash.pickby';
 import {LocationData} from '../../../../store/location/location.models';
-import {getCurrencyAbbreviation} from '../../../../utils/helper-methods';
+import {getExternalServiceSymbol} from '../../utils/external-services-utils';
 
 export type BuyCryptoExchangeKey =
   | 'banxa'
@@ -58,15 +58,16 @@ export const getBuyEnabledPaymentMethods = (
   if (!currency || !coin || !chain) {
     return {};
   }
-  PaymentMethodsAvailable.sepaBankTransfer.enabled = !!(
-    country &&
-    PaymentMethodsAvailable.sepaBankTransfer.supportedCountries?.includes(
-      country,
-    )
-  );
-  PaymentMethodsAvailable.ach.enabled = !!(
-    country && PaymentMethodsAvailable.ach.supportedCountries?.includes(country)
-  );
+  Object.values(PaymentMethodsAvailable).forEach(pm => {
+    if (
+      pm.enabled &&
+      pm.supportedCountries &&
+      pm.supportedCountries.length > 0
+    ) {
+      pm.enabled = !!(country && pm.supportedCountries.includes(country));
+    }
+  });
+
   const EnabledPaymentMethods = pickBy(PaymentMethodsAvailable, method => {
     return exchange && BuyCryptoSupportedExchanges.includes(exchange)
       ? method.enabled &&
@@ -229,27 +230,27 @@ const isCoinSupportedBy = (
   switch (exchange) {
     case 'banxa':
       return getBanxaSupportedCurrencies().includes(
-        getCurrencyAbbreviation(coin.toLowerCase(), chain.toLowerCase()),
+        getExternalServiceSymbol(coin, chain),
       );
     case 'moonpay':
       return getMoonpaySupportedCurrencies(country).includes(
-        getCurrencyAbbreviation(coin.toLowerCase(), chain.toLowerCase()),
+        getExternalServiceSymbol(coin, chain),
       );
     case 'ramp':
       return getRampSupportedCurrencies().includes(
-        getCurrencyAbbreviation(coin.toLowerCase(), chain.toLowerCase()),
+        getExternalServiceSymbol(coin, chain),
       );
     case 'sardine':
       return getSardineSupportedCurrencies().includes(
-        getCurrencyAbbreviation(coin.toLowerCase(), chain.toLowerCase()),
+        getExternalServiceSymbol(coin, chain),
       );
     case 'simplex':
       return getSimplexSupportedCurrencies().includes(
-        getCurrencyAbbreviation(coin.toLowerCase(), chain.toLowerCase()),
+        getExternalServiceSymbol(coin, chain),
       );
     case 'transak':
       return getTransakSupportedCurrencies().includes(
-        getCurrencyAbbreviation(coin.toLowerCase(), chain.toLowerCase()),
+        getExternalServiceSymbol(coin, chain),
       );
     default:
       return false;

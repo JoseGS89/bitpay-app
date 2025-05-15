@@ -5,6 +5,8 @@ import {RootState} from '../index';
 import {Invoice} from '../shop/shop.models';
 import {Network} from '../../constants';
 import {FeeLevels} from './effects/fee/fee';
+import {TxActions} from './effects/transactions/transactions';
+import {WCV2RequestType} from '../wallet-connect-v2/wallet-connect-v2.models';
 
 /**
  * Currently supported hardware wallet sources.
@@ -57,8 +59,13 @@ export interface Key {
   keyName?: string;
   hideKeyBalance: boolean;
   isReadOnly: boolean;
-
-  // CLIENT ONLY
+  evmAccountsInfo?: {
+    [key: string]: {
+      name: string;
+      hideAccount: boolean;
+      accountToggleSelected?: boolean;
+    };
+  };
   hardwareSource?: SupportedHardwareSource;
 }
 
@@ -99,12 +106,13 @@ export interface WalletObj {
   id: string;
   keyId: string;
   chain: string;
+  chainName: string;
   currencyName: string;
   currencyAbbreviation: string;
   m: number;
   n: number;
   balance: CryptoBalance;
-  singleAddress: boolean;
+  singleAddress?: boolean;
   pendingTxps: TransactionProposal[];
   tokenAddress?: string;
   tokens?: string[];
@@ -112,6 +120,9 @@ export interface WalletObj {
   preferences?: {
     tokenAddresses?: [];
     maticTokenAddresses?: [];
+    opTokenAddresses?: [];
+    arbTokenAddresses?: [];
+    baseTokenAddresses?: [];
   };
   img: string | ((props?: any) => ReactElement);
   badgeImg?: string | ((props?: any) => ReactElement);
@@ -124,6 +135,7 @@ export interface WalletObj {
     hasConfirmingTxs: boolean;
   };
   hideWallet?: boolean;
+  hideWalletByAccount?: boolean;
   hideBalance?: boolean;
   network: Network;
   isHardwareWallet?: boolean;
@@ -144,6 +156,7 @@ export interface KeyOptions {
   networkName: string;
   singleAddress: any;
   coin: string;
+  chain: string;
   extendedPrivateKey: any;
   mnemonic: any;
   derivationStrategy: any;
@@ -218,7 +231,10 @@ export interface CustomTransactionData {
   recipientEmail?: string;
   giftCardName?: string;
   changelly?: string;
+  thorswap?: string;
   moonpay?: string;
+  ramp?: string;
+  simplex?: string;
   oneInch?: string;
   shapeShift?: string;
   toWalletName?: any;
@@ -236,9 +252,9 @@ export type TransactionOptionsContext =
 
 export interface TransactionOptions {
   wallet: Wallet;
-  invoice?: Invoice;
   recipient: Recipient;
   amount: number;
+  invoice?: Invoice;
   context?: TransactionOptionsContext;
   currency?: string;
   chain?: string;
@@ -278,6 +294,8 @@ export interface TransactionOptions {
   inputs?: Utxo[];
   // multisend
   recipientList?: Recipient[];
+  // walletconnect
+  request?: WCV2RequestType;
 }
 
 export interface Action {
@@ -287,74 +305,121 @@ export interface Action {
   createdOn: number;
   type: number;
 }
+
+export interface TransactionProposalOutputs {
+  amount: number | string; // Support BN
+  address?: string;
+  addressToShow?: string;
+  toAddress?: string;
+  message?: string;
+  data?: string;
+  gasLimit?: number;
+  script?: string;
+}
+
 export interface TransactionProposal {
   action: string;
   actions: Action[];
   addressTo: string;
-  coin: string;
-  chain: string;
   amount: number;
   amountStr: string;
-  amountValueStr: string;
   amountUnitStr: string;
-  size: number;
-  feeStr: string;
-  fees: number;
-  feeRate: string;
-  from: string;
-  copayerId: string;
-  walletId: string;
-  nonce?: number;
-  enableRBF?: boolean; // not needed (FULLRBF)
-  replaceTxByFee?: boolean;
-  toAddress: string;
-  outputs: Array<{
-    amount: number | string; // Support BN
-    address?: string;
-    addressToShow?: string;
-    toAddress?: string;
-    message?: string;
-    data?: string;
-    gasLimit?: number;
-  }>;
-  inputs: any;
-  fee: any;
-  message: string;
-  customData?: CustomTransactionData;
-  payProUrl: any;
-  excludeUnconfirmedUtxos: boolean;
-  feePerKb: number;
-  feeLevel: string;
-  dryRun: boolean;
-  tokenAddress?: string;
-  destinationTag?: number;
-  invoiceID?: string;
-  multisigGnosisContractAddress?: string;
-  multisigContractAddress?: string;
-  instantAcceptanceEscrow?: number;
-  isTokenSwap?: boolean;
-  id: string;
-  gasLimit?: number;
-  gasPrice?: number;
-  status: string;
-  sendMaxInfo?: SendMaxInfo;
-  createdOn: number;
-  pendingForUs: boolean;
-  statusForUs: string;
-  deleteLockTime: number;
+  amountValueStr: string;
   canBeRemoved: boolean;
-  recipientCount: number;
-  hasMultiplesOutputs: boolean;
-  requiredSignatures: number;
-  requiredRejections: number;
-  raw?: string;
-  txid?: string;
-  inputPaths: Array<string | null>;
+  chain: string;
   changeAddress: {
     path: string;
   };
+  coin: string;
+  copayerId: string;
+  createdOn: number;
+  customData?: CustomTransactionData;
+  deleteLockTime: number;
+  destinationTag?: number;
+  dryRun: boolean;
+  effects?: Array<{
+    amount: number | string; // Support BN
+    contractAddress?: string;
+    from: string;
+    to: string;
+    type: string;
+    callback?: any;
+  }>;
+  enableRBF?: boolean; // not needed (FULLRBF)
+  excludeUnconfirmedUtxos: boolean;
+  fee: any;
+  feeLevel: string;
+  feePerKb: number;
+  feeRate: string;
+  feeStr: string;
+  fees: number;
+  from: string;
+  gasLimit?: number;
+  gasPrice?: number;
+  hasMultiplesOutputs: boolean;
+  id: string;
+  inputPaths: Array<string | null>;
+  inputs: any;
+  instantAcceptanceEscrow?: number;
+  invoiceID?: string;
+  isTokenSwap?: boolean;
+  message: string;
+  multisigContractAddress?: string;
+  multisigGnosisContractAddress?: string;
   network: Network;
+  nonce?: number;
+  note?: {
+    body?: string;
+  };
+  outputs: TransactionProposalOutputs[];
+  payProUrl: any;
+  pendingForUs: boolean;
+  raw?: string;
+  recipientCount: number;
+  replaceTxByFee?: boolean;
+  requiredRejections: number;
+  requiredSignatures: number;
+  sendMaxInfo?: SendMaxInfo;
   signingMethod?: string;
+  size: number;
+  status: string;
+  statusForUs: string;
+  time?: number;
+  toAddress: string;
+  tokenAddress?: string;
+  txid?: string;
+  walletId: string;
+  receipt?: {
+    blockHash: string;
+    blockNumber: number;
+    contractAddress: string | null;
+    cumulativeGasUsed: number;
+    effectiveGasPrice: number;
+    from: string;
+    gasUsed: number;
+    logs: any[];
+    logsBloom: string;
+    status: boolean;
+    to: string;
+    transactionHash: string;
+    transactionIndex: number;
+    type: string;
+  };
+}
+
+export interface TransactionDetailsBuilt extends TransactionProposal {
+  actionsList?: TxActions[];
+  confirmations?: number;
+  creatorName?: string;
+  detailsMemo?: string;
+  error?: any;
+  feeFiatStr?: string;
+  feeRateStr?: string;
+  fiatRateStr?: string;
+  lowAmount?: boolean;
+  lowFee?: boolean;
+  safeConfirmed?: boolean;
+  ts?: number;
 }
 
 export interface ProposalErrorHandlerProps {
@@ -363,6 +428,8 @@ export interface ProposalErrorHandlerProps {
   tx?: TransactionOptions;
   txp?: Partial<TransactionProposal>;
 }
+
+export type ProposalErrorHandlerContext = 'sell' | 'swap';
 
 // UI details
 export interface TxDetailsAmount {
@@ -393,6 +460,7 @@ export interface TxDetailsSendingTo {
   recipientAddress?: string;
   recipientEmail?: string;
   img?: string | ((props?: any) => ReactElement);
+  badgeImg?: string | ((props?: any) => ReactElement);
   recipientFullAddress?: string;
   recipientAmountStr?: string;
   currencyAbbreviation?: string;
@@ -418,6 +486,7 @@ export interface TxDetails {
   gasPrice?: number;
   gasLimit?: number;
   nonce?: number;
+  data?: string;
   //
   sendingFrom: TxDetailsSendingFrom;
   subTotal: TxDetailsAmount;
@@ -439,7 +508,7 @@ export interface SendMaxInfo {
 }
 
 export interface CacheFeeLevel {
-  currency: 'eth' | 'btc' | 'matic';
+  currency: 'eth' | 'btc' | 'matic' | 'arb' | 'base' | 'op';
   feeLevel: FeeLevels;
 }
 

@@ -25,12 +25,13 @@ export type SupportedLedgerAppNames =
   | 'Bitcoin Legacy'
   | 'Bitcoin Test Legacy'
   | 'Ethereum'
-  | 'Ethereum Goerli'
+  | 'Ethereum Sepolia'
   | 'XRP'
   | 'Bitcoin Cash'
   | 'Litecoin'
   | 'Dogecoin'
-  | 'Polygon';
+  | 'Polygon'
+  | 'Polygon Amoy';
 
 /**
  * Gets info on the currently running Ledger app. The OS info is returned if no app is running.
@@ -116,7 +117,7 @@ export const getLedgerErrorMessage = (err: any) => {
   if (err === 'user denied transaction') {
     return err;
   } else if (isLockedDeviceError(err)) {
-    return 'Unlock device to continue.';
+    return 'Unlock your Ledger device to continue.';
   } else if (isTransportStatusError(err)) {
     if (Number(err.statusCode) === UNKNOWN_ERROR) {
       return 'An unknown error was returned by the transport.';
@@ -226,11 +227,11 @@ export const prepareLedgerApp = async (
         // app opened successfully!
       } else if (statusCode === 0x6807) {
         throw new Error(
-          `The ${appName} app is required on your Ledger to continue`,
+          `The ${appName} app is required on your Ledger device to continue.`,
         );
       } else {
         throw new Error(
-          `An unknown status code was returned: 0x${statusCode.toString(16)}`,
+          `An unknown status code was returned: 0x${statusCode.toString(16)}.`,
         );
       }
     } catch (err: any) {

@@ -32,6 +32,9 @@ export const ValidDataTypes: string[] = [
   'BitcoinCashUri',
   'EthereumUri',
   'MaticUri',
+  'ArbUri',
+  'BaseUri',
+  'OpUri',
   'DogecoinUri',
   'LitecoinUri',
   'BitPayUri',
@@ -51,13 +54,19 @@ export const IsValidBitPayInvoice = (data: string): boolean => {
 
 export const IsValidPayPro = (data: string): boolean => {
   data = SanitizeUri(data);
-  return !!/^(bitpay|bitcoin|bitcoincash|bchtest|ethereum|ripple|matic|dogecoin|litecoin)?:\?r=[\w+]/.exec(
+  return !!/^(bitpay|bitcoin|bitcoincash|bchtest|bchreg|ethereum|ripple|matic|arb|base|op|dogecoin|litecoin)?:\?r=[\w+]/.exec(
     data,
   );
 };
 
 export const isValidWalletConnectUri = (data: string): boolean => {
-  return !!/(wallet\/wc|wc:)/g.exec(data);
+  const pattern = /(wallet\/wc|wc:)/g;
+  try {
+    const decoded = decodeURIComponent(data);
+    return pattern.test(decoded);
+  } catch {
+    return pattern.test(data);
+  }
 };
 
 export const isValidBuyCryptoUri = (data: string): boolean => {
@@ -141,6 +150,21 @@ export const IsValidMaticUri = (data: string): boolean => {
   return !!BWC.getCore().Validation.validateUri('MATIC', data);
 };
 
+export const IsValidArbUri = (data: string): boolean => {
+  data = SanitizeUri(data);
+  return !!BWC.getCore().Validation.validateUri('ARB', data);
+};
+
+export const IsValidBaseUri = (data: string): boolean => {
+  data = SanitizeUri(data);
+  return !!BWC.getCore().Validation.validateUri('BASE', data);
+};
+
+export const IsValidOpUri = (data: string): boolean => {
+  data = SanitizeUri(data);
+  return !!BWC.getCore().Validation.validateUri('OP', data);
+};
+
 export const IsValidRippleUri = (data: string): boolean => {
   data = SanitizeUri(data);
   return !!BWC.getCore().Validation.validateUri('XRP', data);
@@ -161,7 +185,7 @@ export const IsValidBitcoinCashUriWithLegacyAddress = (
 ): boolean => {
   data = SanitizeUri(data);
   return !!BWC.getBitcore().URI.isValid(
-    data.replace(/^(bitcoincash:|bchtest:)/, 'bitcoin:'),
+    data.replace(/^(bitcoincash:|bchtest:|bchreg:)/, 'bitcoin:'),
   );
 };
 
@@ -175,7 +199,8 @@ export const IsValidBitcoinAddress = (data: string): boolean => {
 export const IsValidBitcoinCashAddress = (data: string): boolean => {
   return !!(
     BWC.getBitcoreCash().Address.isValid(data, 'livenet') ||
-    BWC.getBitcoreCash().Address.isValid(data, 'testnet')
+    BWC.getBitcoreCash().Address.isValid(data, 'testnet') ||
+    BWC.getBitcoreCash().Address.isValid(data, 'regtest')
   );
 };
 
@@ -189,6 +214,18 @@ export const IsValidEthereumAddress = (data: string): boolean => {
 
 export const IsValidMaticAddress = (data: string): boolean => {
   return !!BWC.getCore().Validation.validateAddress('MATIC', 'livenet', data);
+};
+
+export const IsValidArbAddress = (data: string): boolean => {
+  return !!BWC.getCore().Validation.validateAddress('ARB', 'livenet', data);
+};
+
+export const IsValidBaseAddress = (data: string): boolean => {
+  return !!BWC.getCore().Validation.validateAddress('BASE', 'livenet', data);
+};
+
+export const IsValidOpAddress = (data: string): boolean => {
+  return !!BWC.getCore().Validation.validateAddress('OP', 'livenet', data);
 };
 
 export const IsValidRippleAddress = (data: string): boolean => {
@@ -250,7 +287,8 @@ export const IsValidBitPayUri = (data: string): boolean => {
 export const IsValidBitcoinCashLegacyAddress = (data: string): boolean => {
   return !!(
     BWC.getBitcore().Address.isValid(data, 'livenet') ||
-    BWC.getBitcore().Address.isValid(data, 'testnet')
+    BWC.getBitcore().Address.isValid(data, 'testnet') ||
+    BWC.getBitcore().Address.isValid(data, 'regtest')
   );
 };
 
@@ -311,6 +349,30 @@ export const ValidateURI = (data: string): any => {
       data,
       type: 'MaticUri',
       title: 'Matic URI',
+    };
+  }
+
+  if (IsValidArbUri(data)) {
+    return {
+      data,
+      type: 'ArbUri',
+      title: 'Arb URI',
+    };
+  }
+
+  if (IsValidBaseUri(data)) {
+    return {
+      data,
+      type: 'BaseUri',
+      title: 'Base URI',
+    };
+  }
+
+  if (IsValidOpUri(data)) {
+    return {
+      data,
+      type: 'OpUri',
+      title: 'Op URI',
     };
   }
 
@@ -410,6 +472,11 @@ export const ValidateCoinAddress = (
   coin: string,
   network: string,
 ) => {
+  const extractAddress = (data: string) => {
+    const prefix = /^[a-z]+:/i;
+    const params = /([\?\&](value|gas|gasPrice|gasLimit)=(\d+([\,\.]\d+)?))+/i;
+    return data.replace(prefix, '').replace(params, '');
+  };
   switch (coin) {
     case 'btc':
       const address = BWC.getBitcore().Address;
@@ -426,36 +493,61 @@ export const ValidateCoinAddress = (
     case 'eth':
     case 'xrp':
     case 'matic':
+    case 'arb':
+    case 'base':
+    case 'op':
       const {Validation} = BWC.getCore();
-      return !!Validation.validateAddress(coin.toUpperCase(), network, str);
+      const addr = extractAddress(str);
+      return !!Validation.validateAddress(coin.toUpperCase(), network, addr);
     default:
       return false;
   }
 };
 
 export const IsValidPrivateKey = (data: string): boolean => {
-  const checkPrivateKey = (privateKey: string): boolean => {
-    try {
-      const PKregex = new RegExp(/^[c|5KL][1-9A-HJ-NP-Za-km-z]{50,51}$/);
-      // Check if it is a Transaction ID to prevent errors
-      const isPK: boolean = !!PKregex.exec(privateKey);
-      if (!isPK) {
-        return false;
-      }
-      BwcProvider.getInstance().getBitcore().PrivateKey(privateKey, 'livenet');
-    } catch (err) {
+  const checkPrivateKey = (
+    privateKey: string,
+    network: 'livenet' | 'testnet',
+  ): boolean => {
+    const providers = [
+      BwcProvider.getInstance().getBitcore(),
+      BwcProvider.getInstance().getBitcoreCash(),
+      BwcProvider.getInstance().getBitcoreLtc(),
+      BwcProvider.getInstance().getBitcoreDoge(),
+    ];
+
+    for (const provider of providers) {
       try {
-        BwcProvider.getInstance()
-          .getBitcore()
-          .PrivateKey(privateKey, 'testnet');
-      } catch (err) {
-        return false;
-      }
+        provider.PrivateKey(privateKey, network);
+        return true;
+      } catch (err) {}
     }
-    return true;
+
+    return false;
   };
 
-  return !!(data && (data.substring(0, 2) == '6P' || checkPrivateKey(data)));
+  if (data && data.substring(0, 2) === '6P') {
+    return true;
+  }
+
+  try {
+    const PKregex = /^[c5KL6][1-9A-HJ-NP-Za-km-z]{50,51}$/;
+    const isPK = PKregex.test(data);
+    if (!isPK) {
+      return false;
+    }
+    if (checkPrivateKey(data, 'livenet')) {
+      return true;
+    }
+    if (checkPrivateKey(data, 'testnet')) {
+      return true;
+    }
+  } catch (err) {}
+  return false;
+};
+
+export const IsValidAddKeyPath = (data: string) => {
+  return !!data?.includes('bitpay://addKey');
 };
 
 export const IsValidImportPrivateKey = (data: string): boolean => {

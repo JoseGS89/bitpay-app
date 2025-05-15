@@ -20,11 +20,8 @@ import TwoFactorEnabled, {
   TwoFactorEnabledScreenParamList,
 } from './screens/TwoFactorEnabled';
 import {Root, navigationRef} from '../../Root';
-import {
-  baseNativeHeaderBackButtonProps,
-  baseNavigatorOptions,
-} from '../../constants/NavigationOptions';
-import {HeaderBackButton} from '@react-navigation/elements';
+import {baseNavigatorOptions} from '../../constants/NavigationOptions';
+import HeaderBackButton from '../../components/back/HeaderBackButton';
 
 interface BitpayIdProps {
   BitpayId: typeof Root;
@@ -58,16 +55,9 @@ const BitpayIdGroup: React.FC<BitpayIdProps> = ({BitpayId}) => {
 
   return (
     <BitpayId.Group
-      screenOptions={({navigation}) => ({
+      screenOptions={() => ({
         ...baseNavigatorOptions,
-        headerLeft: () => (
-          <HeaderBackButton
-            onPress={() => {
-              navigation.goBack();
-            }}
-            {...baseNativeHeaderBackButtonProps}
-          />
-        ),
+        headerLeft: () => <HeaderBackButton />,
       })}>
       <BitpayId.Screen
         name={BitpayIdScreens.PAIRING}
@@ -93,7 +83,7 @@ const BitpayIdGroup: React.FC<BitpayIdProps> = ({BitpayId}) => {
                       dispatch(ShopEffects.startFetchCatalog());
 
                       navigationRef.navigate('Tabs', {
-                        screen: 'Settings',
+                        screen: 'Home',
                       });
                     }}>
                     {t('Log Out')}

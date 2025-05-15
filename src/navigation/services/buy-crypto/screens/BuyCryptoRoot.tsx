@@ -20,7 +20,6 @@ import {
   SelectedOptionContainer,
   SelectedOptionText,
   DataText,
-  CoinIconContainer,
 } from '../styled/BuyCryptoCard';
 import Button from '../../../../components/button/Button';
 import {CurrencyImage} from '../../../../components/currency-image/CurrencyImage';
@@ -31,7 +30,7 @@ import {
 } from '../../../../store/app/app.actions';
 import {getBuyCryptoFiatLimits} from '../../../../store/buy-crypto/buy-crypto.effects';
 import {Wallet} from '../../../../store/wallet/wallet.models';
-import {Action, White, Slate, SlateDark} from '../../../../styles/colors';
+import {Action, White, Black, Slate} from '../../../../styles/colors';
 import SelectorArrowDown from '../../../../../assets/img/selector-arrow-down.svg';
 import SelectorArrowRight from '../../../../../assets/img/selector-arrow-right.svg';
 import {
@@ -40,7 +39,7 @@ import {
   sleep,
 } from '../../../../utils/helper-methods';
 import {AppActions} from '../../../../store/app';
-import {IsERCToken} from '../../../../store/wallet/utils/currency';
+import {IsERCToken, IsEVMChain} from '../../../../store/wallet/utils/currency';
 import {
   BuyCryptoExchangeKey,
   BuyCryptoSupportedExchanges,
@@ -54,9 +53,6 @@ import {
   BitpaySupportedCoins,
   BitpaySupportedTokens,
 } from '../../../../constants/currencies';
-import ToWalletSelectorModal, {
-  ToWalletSelectorCustomCurrency,
-} from '../../components/ToWalletSelectorModal';
 import {
   addWallet,
   AddWalletData,
@@ -79,6 +75,23 @@ import {banxaGetPaymentMethods} from '../../../../store/buy-crypto/effects/banxa
 import {banxaEnv, getBanxaCoinFormat} from '../utils/banxa-utils';
 import {BanxaPaymentMethodsData} from '../../../../store/buy-crypto/buy-crypto.models';
 import cloneDeep from 'lodash.clonedeep';
+import SheetModal from '../../../../components/modal/base/sheet/SheetModal';
+import GlobalSelect, {
+  ToWalletSelectorCustomCurrency,
+} from '../../../wallet/screens/GlobalSelect';
+import {getExternalServiceSymbol} from '../../utils/external-services-utils';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {
+  AccountChainsContainer,
+  CurrencyColumn,
+  CurrencyImageContainer,
+  ExternalServicesItemTopTitle,
+  ExternalServicesTitleContainer,
+  Row,
+} from '../../../../components/styled/Containers';
+import {H5, H7, ListItemSubText} from '../../../../components/styled/Text';
+import Blockie from '../../../../components/blockie/Blockie';
+import ArchaxFooter from '../../../../components/archax/archax-footer';
 
 export type BuyCryptoRootScreenParams =
   | {
@@ -89,6 +102,11 @@ export type BuyCryptoRootScreenParams =
       partner?: BuyCryptoExchangeKey | undefined; // used from deeplinks.
     }
   | undefined;
+
+const GlobalSelectContainer = styled.View`
+  flex: 1;
+  background-color: ${({theme: {dark}}) => (dark ? Black : White)};
+`;
 
 const BuyCryptoRootContainer = styled.SafeAreaView`
   flex: 1;
@@ -112,6 +130,7 @@ const BuyCryptoRoot = ({
   const dispatch = useAppDispatch();
   const theme = useTheme();
   const logger = useLogger();
+  const showArchaxBanner = useAppSelector(({APP}) => APP.showArchaxBanner);
   const allKeys = useAppSelector(({WALLET}: RootState) => WALLET.keys);
   const tokenDataByAddress = useAppSelector(
     ({WALLET}: RootState) => WALLET.tokenDataByAddress,
@@ -195,11 +214,19 @@ const BuyCryptoRoot = ({
     dispatch(showWalletError(type, fromCurrencyAbbreviation));
   };
 
+  const getEVMAccountName = (wallet: Wallet) => {
+    const selectedKey = allKeys[wallet.keyId];
+    const evmAccountInfo =
+      selectedKey.evmAccountsInfo?.[wallet.receiveAddress!];
+    return evmAccountInfo?.name;
+  };
+
   const selectFirstAvailableWallet = async () => {
     const keysList = Object.values(allKeys).filter(key => key.backupComplete);
 
     if (!keysList[0]) {
-      walletError('emptyKeyList');
+      // This may cause overlap with the selector wallet modal
+      // walletError('emptyKeyList');
       return;
     }
 
@@ -237,7 +264,7 @@ const BuyCryptoRoot = ({
           fromCurrencyAbbreviation &&
           buyCryptoSupportedCoins.includes(
             fromChain
-              ? getCurrencyAbbreviation(fromCurrencyAbbreviation, fromChain)
+              ? getExternalServiceSymbol(fromCurrencyAbbreviation, fromChain)
               : fromCurrencyAbbreviation,
           )
         ) {
@@ -272,13 +299,14 @@ const BuyCryptoRoot = ({
       wallet.credentials &&
       wallet.network === 'livenet' &&
       buyCryptoSupportedCoins.includes(
-        getCurrencyAbbreviation(
+        getExternalServiceSymbol(
           wallet.currencyAbbreviation.toLowerCase(),
           wallet.chain,
         ),
       ) &&
       wallet.isComplete() &&
       !wallet.hideWallet &&
+      !wallet.hideWalletByAccount &&
       (!fromCurrencyAbbreviation ||
         (wallet.currencyAbbreviation === fromCurrencyAbbreviation &&
           (fromChain ? wallet.chain === fromChain : true)))
@@ -290,7 +318,7 @@ const BuyCryptoRoot = ({
       wallet.credentials &&
       wallet.network === 'livenet' &&
       buyCryptoSupportedCoins.includes(
-        getCurrencyAbbreviation(
+        getExternalServiceSymbol(
           wallet.currencyAbbreviation.toLowerCase(),
           wallet.chain,
         ),
@@ -571,7 +599,10 @@ const BuyCryptoRoot = ({
       !selectedWallet ||
       buyCryptoConfig?.banxa?.disabled ||
       !getBuyCryptoSupportedCoins(undefined, 'banxa').includes(
-        selectedWallet.currencyAbbreviation.toLowerCase(),
+        getExternalServiceSymbol(
+          selectedWallet.currencyAbbreviation,
+          selectedWallet.chain,
+        ),
       )
     ) {
       return;
@@ -637,6 +668,7 @@ const BuyCryptoRoot = ({
 
   const init = async () => {
     try {
+      await sleep(100);
       dispatch(startOnGoingProcessModal('GENERAL_AWAITING'));
       const requestData: ExternalServicesConfigRequestParams = {
         currentLocationCountry: locationData?.countryShortCode,
@@ -737,25 +769,97 @@ const BuyCryptoRoot = ({
     const initialBuyCryptoSupportedCoinsFullObj: ToWalletSelectorCustomCurrency[] =
       supportedCoins
         .map((symbol: string) => {
-          const {coin, chain} = getCoinAndChainFromCurrencyCode(symbol);
-          const foundToken = Object.values({
-            ...BitpaySupportedTokens,
-            ...tokenDataByAddress,
-          }).find(token => token.coin === coin && token.chain === chain);
+          const {coin, chain} = getCoinAndChainFromCurrencyCode(
+            symbol,
+            'buyCrypto',
+          );
+          const isErc20Token = IsERCToken(coin, chain);
+          let foundToken;
+          if (isErc20Token) {
+            foundToken = Object.values({
+              ...BitpaySupportedTokens,
+              ...tokenDataByAddress,
+            }).find(token => token.coin === coin && token.chain === chain);
+          }
           return {
             currencyAbbreviation: coin,
             symbol,
-            name: (BitpaySupportedCoins[symbol]?.name || foundToken?.name)!,
+            name: (isErc20Token
+              ? foundToken?.name || ''
+              : BitpaySupportedCoins[chain]?.name)!,
             chain,
             logoUri: getLogoUri(coin, chain),
+            badgeUri: getBadgeImg(coin, chain),
             tokenAddress: foundToken?.address,
           };
         })
         .filter(currency => !!currency.name);
 
     setBuyCryptoSupportedCoinsFullObj(initialBuyCryptoSupportedCoinsFullObj);
+    if (fromWallet?.id) {
+      selectFirstAvailableWallet();
+    } else {
+      await sleep(500);
+      dispatch(dismissOnGoingProcessModal());
+    }
+  };
 
-    selectFirstAvailableWallet();
+  const onDismiss = async (
+    newWallet?: Wallet,
+    createNewWalletData?: AddWalletData | undefined,
+  ) => {
+    hideModal('walletSelector');
+    if (newWallet?.currencyAbbreviation) {
+      setWallet(newWallet);
+    } else if (createNewWalletData) {
+      try {
+        if (
+          createNewWalletData.key.isPrivKeyEncrypted &&
+          !(
+            createNewWalletData.currency?.isToken &&
+            createNewWalletData.associatedWallet
+          )
+        ) {
+          logger.debug('Key is Encrypted. Trying to decrypt...');
+          await sleep(500);
+          const password = await dispatch(
+            getDecryptPassword(createNewWalletData.key),
+          );
+          createNewWalletData.options.password = password;
+        } else {
+          logger.debug(
+            'Key is Encrypted, but not neccessary for tokens. Trying to create wallet...',
+          );
+        }
+
+        await sleep(500);
+        await dispatch(startOnGoingProcessModal('ADDING_WALLET'));
+
+        const createdToWallet = await dispatch(addWallet(createNewWalletData));
+        logger.debug(
+          `Added ${createdToWallet?.currencyAbbreviation} wallet from Buy Crypto`,
+        );
+        dispatch(
+          Analytics.track('Created Basic Wallet', {
+            coin: createNewWalletData.currency.currencyAbbreviation,
+            chain: createNewWalletData.currency.chain,
+            isErc20Token: createNewWalletData.currency.isToken,
+            context: 'buyCrypto',
+          }),
+        );
+        setWallet(createdToWallet);
+        await sleep(300);
+        dispatch(dismissOnGoingProcessModal());
+      } catch (err: any) {
+        dispatch(dismissOnGoingProcessModal());
+        await sleep(500);
+        if (err.message === 'invalid password') {
+          dispatch(showBottomNotificationModal(WrongPasswordError()));
+        } else {
+          walletError(err.message);
+        }
+      }
+    }
   };
 
   useMount(() => {
@@ -770,6 +874,99 @@ const BuyCryptoRoot = ({
   return (
     <BuyCryptoRootContainer>
       <ScrollView>
+        {selectedWallet && (
+          <ExternalServicesTitleContainer>
+            <ExternalServicesItemTopTitle>
+              {t('Deposit to')}
+            </ExternalServicesItemTopTitle>
+            {IsEVMChain(selectedWallet.chain) ? (
+              <AccountChainsContainer>
+                <Blockie size={19} seed={selectedWallet.receiveAddress} />
+                <H7
+                  ellipsizeMode="tail"
+                  numberOfLines={1}
+                  style={{flexShrink: 1}}>
+                  {getEVMAccountName(selectedWallet)
+                    ? getEVMAccountName(selectedWallet)
+                    : `EVM Account${
+                        Number(selectedWallet.credentials.account) === 0
+                          ? ''
+                          : ` (${selectedWallet.credentials.account})`
+                      }`}
+                </H7>
+              </AccountChainsContainer>
+            ) : null}
+          </ExternalServicesTitleContainer>
+        )}
+        <BuyCryptoItemCard
+          onPress={() => {
+            showModal('walletSelector');
+          }}>
+          {!selectedWallet && (
+            <>
+              <BuyCryptoItemTitle>{t('Deposit to')}</BuyCryptoItemTitle>
+              <SelectedOptionContainer style={{backgroundColor: Action}}>
+                <SelectedOptionText
+                  style={{color: White}}
+                  numberOfLines={1}
+                  ellipsizeMode={'tail'}>
+                  {t('Choose Crypto')}
+                </SelectedOptionText>
+                <ArrowContainer>
+                  <SelectorArrowRight
+                    {...{width: 13, height: 13, color: White}}
+                  />
+                </ArrowContainer>
+              </SelectedOptionContainer>
+            </>
+          )}
+          {selectedWallet && (
+            <ActionsContainer>
+              <CurrencyImageContainer>
+                <CurrencyImage
+                  img={selectedWallet.img}
+                  badgeUri={getBadgeImg(
+                    getCurrencyAbbreviation(
+                      selectedWallet.currencyAbbreviation,
+                      selectedWallet.chain,
+                    ),
+                    selectedWallet.chain,
+                  )}
+                  size={45}
+                />
+              </CurrencyImageContainer>
+              <CurrencyColumn>
+                <Row>
+                  <H5 ellipsizeMode="tail" numberOfLines={1}>
+                    {selectedWallet.walletName
+                      ? selectedWallet.walletName
+                      : selectedWallet.currencyName}
+                  </H5>
+                </Row>
+                <Row style={{alignItems: 'center'}}>
+                  <ListItemSubText
+                    ellipsizeMode="tail"
+                    numberOfLines={1}
+                    style={{marginTop: Platform.OS === 'ios' ? 2 : 0}}>
+                    {selectedWallet.currencyAbbreviation.toUpperCase()}
+                  </ListItemSubText>
+                </Row>
+              </CurrencyColumn>
+              <SelectedOptionCol>
+                <ArrowContainer>
+                  <SelectorArrowRight
+                    {...{
+                      width: 13,
+                      height: 13,
+                      color: theme.dark ? White : Slate,
+                    }}
+                  />
+                </ArrowContainer>
+              </SelectedOptionCol>
+            </ActionsContainer>
+          )}
+        </BuyCryptoItemCard>
+
         <BuyCryptoItemCard
           onPress={() => {
             showModal('amount');
@@ -794,79 +991,6 @@ const BuyCryptoRoot = ({
               </ArrowContainer>
             </SelectedOptionCol>
           </ActionsContainer>
-        </BuyCryptoItemCard>
-
-        <BuyCryptoItemCard
-          onPress={() => {
-            showModal('walletSelector');
-          }}>
-          <BuyCryptoItemTitle>{t('Deposit to')}</BuyCryptoItemTitle>
-          {!selectedWallet && (
-            <ActionsContainer>
-              <SelectedOptionContainer style={{backgroundColor: Action}}>
-                <SelectedOptionText
-                  style={{color: White}}
-                  numberOfLines={1}
-                  ellipsizeMode={'tail'}>
-                  {t('Select Destination')}
-                </SelectedOptionText>
-                <ArrowContainer>
-                  <SelectorArrowDown
-                    {...{width: 13, height: 13, color: White}}
-                  />
-                </ArrowContainer>
-              </SelectedOptionContainer>
-            </ActionsContainer>
-          )}
-          {selectedWallet && (
-            <ActionsContainer>
-              <SelectedOptionContainer style={{minWidth: 120}}>
-                <SelectedOptionCol>
-                  <CoinIconContainer>
-                    <CurrencyImage
-                      img={selectedWallet.img}
-                      badgeUri={getBadgeImg(
-                        getCurrencyAbbreviation(
-                          selectedWallet.currencyAbbreviation,
-                          selectedWallet.chain,
-                        ),
-                        selectedWallet.chain,
-                      )}
-                      size={20}
-                    />
-                  </CoinIconContainer>
-                  <SelectedOptionText numberOfLines={1} ellipsizeMode={'tail'}>
-                    {selectedWallet.currencyAbbreviation.toUpperCase()}
-                  </SelectedOptionText>
-                </SelectedOptionCol>
-                <ArrowContainer>
-                  <SelectorArrowDown
-                    {...{
-                      width: 13,
-                      height: 13,
-                      color: theme.dark ? White : SlateDark,
-                    }}
-                  />
-                </ArrowContainer>
-              </SelectedOptionContainer>
-              <SelectedOptionCol>
-                <DataText numberOfLines={1} ellipsizeMode={'tail'}>
-                  {selectedWallet.walletName
-                    ? selectedWallet.walletName
-                    : selectedWallet.currencyName}
-                </DataText>
-                <ArrowContainer>
-                  <SelectorArrowRight
-                    {...{
-                      width: 13,
-                      height: 13,
-                      color: theme.dark ? White : Slate,
-                    }}
-                  />
-                </ArrowContainer>
-              </SelectedOptionCol>
-            </ActionsContainer>
-          )}
         </BuyCryptoItemCard>
 
         {!!selectedWallet && (
@@ -923,6 +1047,7 @@ const BuyCryptoRoot = ({
           </Button>
         </CtaContainer>
       </ScrollView>
+      {showArchaxBanner && <ArchaxFooter />}
 
       <AmountModal
         isVisible={amountModalVisible}
@@ -933,64 +1058,24 @@ const BuyCryptoRoot = ({
         }}
         onClose={() => hideModal('amount')}
       />
-
-      <ToWalletSelectorModal
+      <SheetModal
+        modalLibrary="bottom-sheet"
         isVisible={walletSelectorModalVisible}
-        modalContext={'buyCrypto'}
-        disabledChain={undefined}
-        customSupportedCurrencies={buyCryptoSupportedCoinsFullObj}
-        livenetOnly={!__DEV__}
-        modalTitle={t('Select Destination')}
-        onDismiss={async (
-          newWallet?: Wallet,
-          createNewWalletData?: AddWalletData,
-        ) => {
-          hideModal('walletSelector');
-          if (newWallet?.currencyAbbreviation) {
-            setWallet(newWallet);
-          } else if (createNewWalletData) {
-            try {
-              if (createNewWalletData.key.isPrivKeyEncrypted) {
-                logger.debug('Key is Encrypted. Trying to decrypt...');
-                await sleep(500);
-                const password = await dispatch(
-                  getDecryptPassword(createNewWalletData.key),
-                );
-                createNewWalletData.options.password = password;
-              }
-
-              await sleep(500);
-              await dispatch(startOnGoingProcessModal('ADDING_WALLET'));
-
-              const createdToWallet = await dispatch(
-                addWallet(createNewWalletData),
-              );
-              logger.debug(
-                `Added ${createdToWallet?.currencyAbbreviation} wallet from Buy Crypto`,
-              );
-              dispatch(
-                Analytics.track('Created Basic Wallet', {
-                  coin: createNewWalletData.currency.currencyAbbreviation,
-                  chain: createNewWalletData.currency.chain,
-                  isErc20Token: createNewWalletData.currency.isToken,
-                  context: 'buyCrypto',
-                }),
-              );
-              setWallet(createdToWallet);
-              await sleep(300);
-              dispatch(dismissOnGoingProcessModal());
-            } catch (err: any) {
-              dispatch(dismissOnGoingProcessModal());
-              await sleep(500);
-              if (err.message === 'invalid password') {
-                dispatch(showBottomNotificationModal(WrongPasswordError()));
-              } else {
-                walletError(err.message);
-              }
-            }
-          }
-        }}
-      />
+        onBackdropPress={() => onDismiss()}
+        fullscreen>
+        <GlobalSelectContainer>
+          <GlobalSelect
+            route={route}
+            navigation={navigation}
+            modalContext={'buy'}
+            livenetOnly={!__DEV__}
+            useAsModal={true}
+            modalTitle={t('Select Crypto')}
+            customToSelectCurrencies={buyCryptoSupportedCoinsFullObj}
+            globalSelectOnDismiss={onDismiss}
+          />
+        </GlobalSelectContainer>
+      </SheetModal>
 
       <PaymentMethodsModal
         context={'buyCrypto'}

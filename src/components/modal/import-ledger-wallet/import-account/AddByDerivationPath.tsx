@@ -35,14 +35,13 @@ import {
   useLogger,
 } from '../../../../utils/hooks';
 import styled from 'styled-components/native';
-import {Warning75, White} from '../../../../styles/colors';
 import {
   EVMAccountParams,
   UtxoAccountParams,
   XrpAccountParams,
   currencyConfigs,
 } from './SelectLedgerCurrency';
-import {IsUtxoCoin} from '../../../../store/wallet/utils/currency';
+import {IsUtxoChain} from '../../../../store/wallet/utils/currency';
 import {
   successCreateKey,
   updatePortfolioBalance,
@@ -50,6 +49,9 @@ import {
 import {Wallet} from '../../../../store/wallet/wallet.models';
 import {DefaultDerivationPath} from '../../../../constants/defaultDerivationPath';
 import {startUpdateWalletStatus} from '../../../../store/wallet/effects/status/status';
+import {ErrorDescriptionColumn} from '../components/ErrorDescriptionColumn';
+import {buildKeyObj} from '../../../../store/wallet/utils/wallet';
+import {setHomeCarouselConfig} from '../../../../store/app/app.actions';
 
 interface Props {
   onComplete: () => void;
@@ -59,22 +61,15 @@ interface Props {
     React.SetStateAction<Transport | null>
   >;
   onDisconnect: () => Promise<void>;
-  selectedCurrency: string;
+  selectedChain: string;
   scannedWalletsIds?: string[];
 }
 
-const ErrParagraph = styled(Paragraph)`
-  background-color: ${Warning75};
-  color: ${White};
-  border-radius: 12px;
-  padding: 20px;
-`;
-
 export const AddByDerivationPath: React.FC<Props> = props => {
   const defaultCoin =
-    props.selectedCurrency === 'btc'
-      ? `defaultLedger${props.selectedCurrency.toUpperCase()}`
-      : `default${props.selectedCurrency.toUpperCase()}`;
+    props.selectedChain === 'btc'
+      ? `defaultLedger${props.selectedChain.toUpperCase()}`
+      : `default${props.selectedChain.toUpperCase()}`;
   const [derivationPath, setDerivationPath] = useState<string>(
     (DefaultDerivationPath as Record<string, any>)[defaultCoin],
   );
@@ -100,6 +95,7 @@ export const AddByDerivationPath: React.FC<Props> = props => {
     network,
     derivationInformation,
     coin,
+    chain,
     currencySymbol,
   }: {
     currencyId: string;
@@ -111,11 +107,23 @@ export const AddByDerivationPath: React.FC<Props> = props => {
       purpose: string;
     }[];
     coin: string;
+    chain: 'btc' | 'bch' | 'ltc' | 'doge';
     currencySymbol: 'btc' | 'bch' | 'ltc' | 'doge';
   }) => {
     try {
       logger.debug('Preparing app... approve should be requested soon');
-      const key = keys['readonly/ledger'];
+      const hardwareSource = 'ledger';
+      let key = Object.values(keys).find(
+        k => k.id === `readonly/${hardwareSource}`,
+      );
+      if (!key) {
+        key = buildKeyObj({
+          key: undefined,
+          wallets: [],
+          hardwareSource,
+          backupComplete: true,
+        });
+      }
       const c = getCryptoCurrencyById(currencyId);
       if (c.bitcoinLikeInfo?.XPUBVersion) {
         await prepareLedgerApp(
@@ -141,7 +149,6 @@ export const AddByDerivationPath: React.FC<Props> = props => {
           path: derivationPath,
           xpubVersion,
         });
-
         const newWallet = await dispatch(
           startImportFromHardwareWallet({
             key,
@@ -149,6 +156,7 @@ export const AddByDerivationPath: React.FC<Props> = props => {
             xPubKey,
             accountPath: derivationPath,
             coin: currencySymbol,
+            chain,
             derivationStrategy,
             accountNumber: Number(getAccount(derivationPath)),
             network,
@@ -156,7 +164,7 @@ export const AddByDerivationPath: React.FC<Props> = props => {
         );
         const walletsToRemove = props?.scannedWalletsIds;
         const walletsToPersist = key.wallets.filter(
-          (wallet: Wallet) => !walletsToRemove?.includes(wallet.id),
+          (wallet: Wallet) => !walletsToRemove?.includes(wallet?.id),
         );
         key.wallets = [...walletsToPersist, newWallet];
         await dispatch(
@@ -166,13 +174,23 @@ export const AddByDerivationPath: React.FC<Props> = props => {
         );
         // wait for scanning to finish to perform this action
         if (!newWallet.isScanning) {
-          await dispatch(startGetRates({force: true}));
-          await dispatch(
-            startUpdateWalletStatus({key, wallet: newWallet, force: true}),
-          );
-          await sleep(1000);
-          await dispatch(updatePortfolioBalance());
+          try {
+            await dispatch(startGetRates({force: true}));
+            await dispatch(
+              startUpdateWalletStatus({key, wallet: newWallet, force: true}),
+            );
+            await sleep(1000);
+            await dispatch(updatePortfolioBalance());
+          } catch (error) {
+            // ignore error
+          }
         }
+        dispatch(
+          setHomeCarouselConfig({
+            id: key.id,
+            show: true,
+          }),
+        );
         logger.debug('Success adding wallet');
 
         props.onComplete();
@@ -192,16 +210,29 @@ export const AddByDerivationPath: React.FC<Props> = props => {
     purpose,
     coin,
     currencySymbol,
+    chain,
   }: {
     appName: SupportedLedgerAppNames;
     network: Network;
     purpose: string;
     coin: string;
     currencySymbol: 'eth' | 'matic';
+    chain: 'eth' | 'matic' | 'arb' | 'op' | 'base';
   }) => {
     try {
       logger.debug('Preparing app... approve should be requested soon');
-      const key = keys['readonly/ledger'];
+      const hardwareSource = 'ledger';
+      let key = Object.values(keys).find(
+        k => k.id === `readonly/${hardwareSource}`,
+      );
+      if (!key) {
+        key = buildKeyObj({
+          key: undefined,
+          wallets: [],
+          hardwareSource,
+          backupComplete: true,
+        });
+      }
       await prepareLedgerApp(
         appName,
         transportRef,
@@ -213,7 +244,7 @@ export const AddByDerivationPath: React.FC<Props> = props => {
       const eth = new AppEth(transportRef.current);
       const derivationStrategy = getDerivationStrategy(derivationPath);
       logger.debug(`Get wallet public key with path: ${derivationPath}`);
-      const {publicKey} = await eth.getAddress(derivationPath);
+      const {publicKey} = await eth.getAddress(`${derivationPath}/0/0`);
       const newWallet = await dispatch(
         startImportFromHardwareWallet({
           key,
@@ -221,6 +252,7 @@ export const AddByDerivationPath: React.FC<Props> = props => {
           publicKey,
           accountPath: derivationPath,
           coin: currencySymbol,
+          chain,
           derivationStrategy,
           accountNumber: Number(getAccount(derivationPath)),
           network,
@@ -228,7 +260,7 @@ export const AddByDerivationPath: React.FC<Props> = props => {
       );
       const walletsToRemove = props?.scannedWalletsIds;
       const walletsToPersist = key.wallets.filter(
-        (wallet: Wallet) => !walletsToRemove?.includes(wallet.id),
+        (wallet: Wallet) => !walletsToRemove?.includes(wallet?.id),
       );
       key.wallets = [...walletsToPersist, newWallet];
 
@@ -239,13 +271,23 @@ export const AddByDerivationPath: React.FC<Props> = props => {
       );
       // wait for scanning to finish to perform this action
       if (!newWallet.isScanning) {
-        await dispatch(startGetRates({force: true}));
-        await dispatch(
-          startUpdateWalletStatus({key, wallet: newWallet, force: true}),
-        );
-        await sleep(1000);
-        await dispatch(updatePortfolioBalance());
+        try {
+          await dispatch(startGetRates({force: true}));
+          await dispatch(
+            startUpdateWalletStatus({key, wallet: newWallet, force: true}),
+          );
+          await sleep(1000);
+          await dispatch(updatePortfolioBalance());
+        } catch (error) {
+          // ignore error
+        }
       }
+      dispatch(
+        setHomeCarouselConfig({
+          id: key.id,
+          show: true,
+        }),
+      );
       logger.debug('Success adding wallet');
       props.onComplete();
     } catch (err) {
@@ -263,16 +305,29 @@ export const AddByDerivationPath: React.FC<Props> = props => {
     purpose,
     coin,
     currencySymbol,
+    chain,
   }: {
     appName: SupportedLedgerAppNames;
     network: Network;
     purpose: string;
     coin: string;
     currencySymbol: 'xrp';
+    chain: 'xrp';
   }) => {
     try {
       logger.debug('Preparing app... approve should be requested soon');
-      const key = keys['readonly/ledger'];
+      const hardwareSource = 'ledger';
+      let key = Object.values(keys).find(
+        k => k.id === `readonly/${hardwareSource}`,
+      );
+      if (!key) {
+        key = buildKeyObj({
+          key: undefined,
+          wallets: [],
+          hardwareSource,
+          backupComplete: true,
+        });
+      }
       await prepareLedgerApp(
         appName,
         transportRef,
@@ -284,7 +339,7 @@ export const AddByDerivationPath: React.FC<Props> = props => {
       const xrp = new Xrp(transportRef.current);
       const derivationStrategy = getDerivationStrategy(derivationPath);
       logger.debug(`Get wallet public key with path: ${derivationPath}`);
-      const {publicKey} = await xrp.getAddress(derivationPath);
+      const {publicKey} = await xrp.getAddress(`${derivationPath}/0/0`);
       const newWallet = await dispatch(
         startImportFromHardwareWallet({
           key,
@@ -292,6 +347,7 @@ export const AddByDerivationPath: React.FC<Props> = props => {
           publicKey,
           accountPath: derivationPath,
           coin: currencySymbol,
+          chain,
           derivationStrategy,
           accountNumber: Number(getAccount(derivationPath)),
           network,
@@ -299,7 +355,7 @@ export const AddByDerivationPath: React.FC<Props> = props => {
       );
       const walletsToRemove = props?.scannedWalletsIds;
       const walletsToPersist = key.wallets.filter(
-        (wallet: Wallet) => !walletsToRemove?.includes(wallet.id),
+        (wallet: Wallet) => !walletsToRemove?.includes(wallet?.id),
       );
       key.wallets = [...walletsToPersist, newWallet];
       await dispatch(
@@ -309,13 +365,23 @@ export const AddByDerivationPath: React.FC<Props> = props => {
       );
       // wait for scanning to finish to perform this action
       if (!newWallet.isScanning) {
-        await dispatch(startGetRates({force: true}));
-        await dispatch(
-          startUpdateWalletStatus({key, wallet: newWallet, force: true}),
-        );
-        await sleep(1000);
-        await dispatch(updatePortfolioBalance());
+        try {
+          await dispatch(startGetRates({force: true}));
+          await dispatch(
+            startUpdateWalletStatus({key, wallet: newWallet, force: true}),
+          );
+          await sleep(1000);
+          await dispatch(updatePortfolioBalance());
+        } catch (error) {
+          // ignore error
+        }
       }
+      dispatch(
+        setHomeCarouselConfig({
+          id: key.id,
+          show: true,
+        }),
+      );
       logger.debug('Success adding wallet');
       props.onComplete();
     } catch (err) {
@@ -327,20 +393,20 @@ export const AddByDerivationPath: React.FC<Props> = props => {
     }
   };
 
-  const importLedgerAccount = async (currency: string, network: Network) => {
-    const configFn = currencyConfigs[currency];
+  const importLedgerAccount = async (chain: string, network: Network) => {
+    const configFn = currencyConfigs[chain];
     if (!configFn) {
-      setError(`Unsupported currency: ${currency.toUpperCase()}`);
+      setError(`Unsupported chain: ${chain.toUpperCase()}`);
       return;
     }
     const params = configFn(network);
-    if (IsUtxoCoin(currency)) {
+    if (IsUtxoChain(chain)) {
       return importUtxoAccount(params as UtxoAccountParams);
     }
-    if (['eth', 'matic'].includes(currency)) {
+    if (['eth', 'matic', 'arb', 'op', 'base'].includes(chain)) {
       return importEVMAccount(params as EVMAccountParams);
     }
-    if (currency === 'xrp') {
+    if (chain === 'xrp') {
       return importXrpAccount(params as XrpAccountParams);
     }
   };
@@ -349,7 +415,7 @@ export const AddByDerivationPath: React.FC<Props> = props => {
     setError('');
     setContinueButtonState('loading');
     const network = Network.mainnet;
-    await importLedgerAccount(props.selectedCurrency, network);
+    await importLedgerAccount(props.selectedChain, network);
     setContinueButtonState(null);
   };
 
@@ -364,12 +430,10 @@ export const AddByDerivationPath: React.FC<Props> = props => {
       </Header>
 
       {error && error !== 'user denied transaction' && !isLoading ? (
-        <DescriptionRow>
-          <ErrParagraph>{error}</ErrParagraph>
-        </DescriptionRow>
+        <ErrorDescriptionColumn error={error} />
       ) : null}
 
-      <DescriptionRow>
+      <DescriptionRow style={{marginTop: 12}}>
         {isPromptOpenApp ? (
           <Paragraph style={{textAlign: 'center'}}>
             Approve the app BitPay so wallets can be added to your device.

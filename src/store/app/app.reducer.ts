@@ -1,6 +1,6 @@
 import i18n from 'i18next';
 import {ColorSchemeName, EventSubscription} from 'react-native';
-import {ContentCard} from 'react-native-appboy-sdk';
+import {ContentCard} from '@braze/react-native-sdk';
 import {AltCurrenciesRowProps} from '../../components/list/AltCurrenciesRow';
 import {BottomNotificationConfig} from '../../components/modal/bottom-notification/BottomNotification';
 import {PinModalConfig} from '../../components/modal/pin/PinModal';
@@ -23,7 +23,11 @@ import uniqBy from 'lodash.uniqby';
 import {BiometricModalConfig} from '../../components/modal/biometric/BiometricModal';
 import {FeedbackRateType} from '../../navigation/tabs/settings/about/screens/SendFeedback';
 import moment from 'moment';
-import {Web3WalletTypes} from '@walletconnect/web3wallet';
+import {WalletKitTypes} from '@reown/walletkit';
+import {SupportedChains} from '../../constants/currencies';
+import {ChainSelectorConfig} from '../../components/modal/chain-selector/ChainSelector';
+import {LocalAssetsDropdown} from '../../components/list/AssetsByChainRow';
+import {PaymentSentModalConfig} from '../../navigation/wallet/components/PaymentSent';
 
 export const appReduxPersistBlackList: Array<keyof AppState> = [
   'activeModalId',
@@ -33,21 +37,29 @@ export const appReduxPersistBlackList: Array<keyof AppState> = [
   'brazeContentCardSubscription',
   'failedAppInit',
   'inAppBrowserOpen',
-  'inAppMessageData',
   'inAppNotificationData',
   'lockAuthorizedUntil',
   'onGoingProcessModalMessage',
   'pinModalConfig',
   'showBiometricModal',
   'showBottomNotificationModal',
+  'showChainSelectorModal',
+  'chainSelectorModalConfig',
   'showDecryptPasswordModal',
-  'showInAppMessage',
   'showInAppNotification',
   'showOnGoingProcessModal',
+  'showWalletConnectStartModal',
   'showPinModal',
+  'selectedLocalChainFilterOption',
+  'tokensDataLoaded',
+  'isImportLedgerModalVisible',
+  'showArchaxBanner',
+  'showPaymentSentModal',
+  'paymentSentModalConfig',
 ];
 
 export type ModalId =
+  | 'enterEncryptionPassword'
   | 'sheetModal'
   | 'ongoingProcess'
   | 'pin'
@@ -86,23 +98,26 @@ export interface AppState {
    */
   appIsReadyForDeeplinking: boolean;
   appFirstOpenData: AppFirstOpenData;
+  appInstalled: boolean;
   introCompleted: boolean;
   userFeedback: FeedbackType;
   onboardingCompleted: boolean;
   showOnGoingProcessModal: boolean;
+  showWalletConnectStartModal: boolean;
   onGoingProcessModalMessage: string | undefined;
-  showInAppMessage: boolean;
-  inAppMessageData: string;
+  inAppMessageData: string | undefined;
   showInAppNotification: boolean;
   inAppNotificationData:
     | {
         context: InAppNotificationContextType;
         message: string;
-        request?: Web3WalletTypes.EventArguments['session_request'];
+        request?: WalletKitTypes.EventArguments['session_request'];
       }
     | undefined;
   showBottomNotificationModal: boolean;
   bottomNotificationModalConfig: BottomNotificationConfig | undefined;
+  showChainSelectorModal: boolean;
+  chainSelectorModalConfig: ChainSelectorConfig | undefined;
   notificationsAccepted: boolean;
   confirmedTxAccepted: boolean;
   announcementsAccepted: boolean;
@@ -136,6 +151,10 @@ export interface AppState {
   altCurrencyList: Array<AltCurrenciesRowProps>;
   defaultAltCurrency: AltCurrenciesRowProps;
   recentDefaultAltCurrency: Array<AltCurrenciesRowProps>;
+  selectedChainFilterOption: SupportedChains | undefined;
+  selectedLocalChainFilterOption: SupportedChains | undefined;
+  selectedLocalAssetsDropdown: LocalAssetsDropdown | undefined;
+  recentSelectedChainFilterOption: string[];
   migrationComplete: boolean;
   keyMigrationFailure: boolean;
   migrationMMKVStorageComplete: boolean;
@@ -149,6 +168,10 @@ export interface AppState {
   hasViewedBillsTab: boolean;
   isImportLedgerModalVisible: boolean;
   inAppBrowserOpen: boolean;
+  tokensDataLoaded: boolean;
+  showArchaxBanner: boolean;
+  showPaymentSentModal: boolean;
+  paymentSentModalConfig: PaymentSentModalConfig | undefined;
 }
 
 const initialState: AppState = {
@@ -163,6 +186,11 @@ const initialState: AppState = {
       pub: '',
       sin: '',
     },
+    [Network.regtest]: {
+      priv: '',
+      pub: '',
+      sin: '',
+    },
   },
   network: APP_NETWORK,
   baseBitPayURL: BASE_BITPAY_URLS[Network.mainnet],
@@ -170,6 +198,7 @@ const initialState: AppState = {
   appWasInit: false,
   appIsReadyForDeeplinking: false,
   appFirstOpenData: {firstOpenEventComplete: false, firstOpenDate: undefined},
+  appInstalled: false,
   introCompleted: false,
   userFeedback: {
     time: moment().unix(),
@@ -179,13 +208,15 @@ const initialState: AppState = {
   },
   onboardingCompleted: false,
   showOnGoingProcessModal: false,
+  showWalletConnectStartModal: false,
   onGoingProcessModalMessage: undefined,
-  showInAppMessage: false,
-  inAppMessageData: '',
+  inAppMessageData: undefined,
   showInAppNotification: false,
   inAppNotificationData: undefined,
   showBottomNotificationModal: false,
   bottomNotificationModalConfig: undefined,
+  showChainSelectorModal: false,
+  chainSelectorModalConfig: undefined,
   notificationsAccepted: false,
   confirmedTxAccepted: false,
   announcementsAccepted: false,
@@ -219,6 +250,10 @@ const initialState: AppState = {
   altCurrencyList: [],
   defaultAltCurrency: {isoCode: 'USD', name: 'US Dollar'},
   recentDefaultAltCurrency: [],
+  selectedChainFilterOption: undefined,
+  selectedLocalChainFilterOption: undefined,
+  selectedLocalAssetsDropdown: undefined,
+  recentSelectedChainFilterOption: [],
   migrationComplete: false,
   keyMigrationFailure: false,
   migrationMMKVStorageComplete: false,
@@ -232,6 +267,10 @@ const initialState: AppState = {
   hasViewedBillsTab: false,
   isImportLedgerModalVisible: false,
   inAppBrowserOpen: false,
+  tokensDataLoaded: false,
+  showArchaxBanner: false,
+  showPaymentSentModal: false,
+  paymentSentModalConfig: undefined,
 };
 
 export const appReducer = (
@@ -261,6 +300,12 @@ export const appReducer = (
       return {
         ...state,
         appWasInit: true,
+      };
+
+    case AppActionTypes.APP_TOKENS_DATA_LOADED:
+      return {
+        ...state,
+        tokensDataLoaded: true,
       };
 
     case AppActionTypes.APP_READY_FOR_DEEPLINKING:
@@ -299,6 +344,12 @@ export const appReducer = (
         introCompleted: true,
       };
 
+    case AppActionTypes.SET_APP_INSTALLED:
+      return {
+        ...state,
+        appInstalled: true,
+      };
+
     case AppActionTypes.SHOW_ONGOING_PROCESS_MODAL:
       return {
         ...state,
@@ -312,18 +363,16 @@ export const appReducer = (
         showOnGoingProcessModal: false,
       };
 
-    case AppActionTypes.SHOW_IN_APP_MESSAGE:
+    case AppActionTypes.SHOW_WALLET_CONNECT_START_MODAL:
       return {
         ...state,
-        showInAppMessage: true,
-        inAppMessageData: action.payload,
+        showWalletConnectStartModal: true,
       };
 
-    case AppActionTypes.DISMISS_IN_APP_MESSAGE:
+    case AppActionTypes.DISMISS_WALLET_CONNECT_START_MODAL:
       return {
         ...state,
-        showInAppMessage: false,
-        inAppMessageData: undefined,
+        showWalletConnectStartModal: false,
       };
 
     case AppActionTypes.SHOW_IN_APP_NOTIFICATION:
@@ -357,6 +406,25 @@ export const appReducer = (
       return {
         ...state,
         bottomNotificationModalConfig: undefined,
+      };
+
+    case AppActionTypes.SHOW_CHAIN_SELECTOR_MODAL:
+      return {
+        ...state,
+        showChainSelectorModal: true,
+        chainSelectorModalConfig: action.payload,
+      };
+
+    case AppActionTypes.DISMISS_CHAIN_SELECTOR_MODAL:
+      return {
+        ...state,
+        showChainSelectorModal: false,
+      };
+
+    case AppActionTypes.CLEAR_CHAIN_SELECTOR_MODAL_OPTIONS:
+      return {
+        ...state,
+        chainSelectorModalConfig: undefined,
       };
 
     case AppActionTypes.SET_COLOR_SCHEME:
@@ -595,6 +663,50 @@ export const appReducer = (
         recentDefaultAltCurrency,
       };
 
+    case AppActionTypes.SET_DEFAULT_CHAIN_FILTER_OPTION:
+      let recentSelectedDefaultChainFilterOption = [
+        ...state.recentSelectedChainFilterOption,
+      ];
+      if (action.selectedChainFilterOption) {
+        recentSelectedDefaultChainFilterOption.unshift(
+          action.selectedChainFilterOption,
+        );
+        recentSelectedDefaultChainFilterOption = uniqBy(
+          recentSelectedDefaultChainFilterOption,
+          o => o.toLowerCase(),
+        ).slice(0, 2);
+      }
+      return {
+        ...state,
+        selectedChainFilterOption: action.selectedChainFilterOption,
+        recentSelectedChainFilterOption: recentSelectedDefaultChainFilterOption,
+      };
+
+    case AppActionTypes.SET_LOCAL_CHAIN_FILTER_OPTION:
+      let recentSelectedLocalChainFilterOption = [
+        ...state.recentSelectedChainFilterOption,
+      ];
+      if (action.selectedLocalChainFilterOption) {
+        recentSelectedLocalChainFilterOption.unshift(
+          action.selectedLocalChainFilterOption,
+        );
+        recentSelectedLocalChainFilterOption = uniqBy(
+          recentSelectedLocalChainFilterOption,
+          o => o.toLowerCase(),
+        ).slice(0, 2);
+      }
+      return {
+        ...state,
+        selectedLocalChainFilterOption: action.selectedLocalChainFilterOption,
+        recentSelectedChainFilterOption: recentSelectedLocalChainFilterOption,
+      };
+
+    case AppActionTypes.SET_LOCAL_ASSETS_DROPDOWN:
+      return {
+        ...state,
+        selectedLocalAssetsDropdown: action.selectedLocalAssetsDropdown,
+      };
+
     case AppActionTypes.SET_MIGRATION_COMPLETE:
       return {
         ...state,
@@ -671,6 +783,31 @@ export const appReducer = (
       return {
         ...state,
         inAppBrowserOpen: action.payload,
+      };
+
+    case AppActionTypes.SHOW_ARCHAX_BANNER:
+      return {
+        ...state,
+        showArchaxBanner: action.payload,
+      };
+
+    case AppActionTypes.SHOW_PAYMENT_SENT_MODAL:
+      return {
+        ...state,
+        showPaymentSentModal: true,
+        paymentSentModalConfig: action.payload,
+      };
+
+    case AppActionTypes.DISMISS_PAYMENT_SENT_MODAL:
+      return {
+        ...state,
+        showPaymentSentModal: false,
+      };
+
+    case AppActionTypes.CLEAR_PAYMENT_SENT_MODAL_OPTIONS:
+      return {
+        ...state,
+        paymentSentModalConfig: undefined,
       };
 
     default:

@@ -1,12 +1,14 @@
 import React, {useState} from 'react';
 import {useTranslation} from 'react-i18next';
+import {Platform, ScrollView} from 'react-native';
+import {NavigationProp, RouteProp} from '@react-navigation/native';
+import {WalletGroupParamList} from '../../../../navigation/wallet/WalletGroup';
+import styled from 'styled-components/native';
 import GlobalSelect, {
   GlobalSelectModalContext,
 } from '../../../wallet/screens/GlobalSelect';
 import {Black, LightBlack, White} from '../../../../styles/colors';
-import styled from 'styled-components/native';
 import SheetModal from '../../../../components/modal/base/sheet/SheetModal';
-import {ScrollView} from 'react-native';
 import {
   Column,
   CurrencyImageContainer,
@@ -16,6 +18,12 @@ import {H4, H5, SubText, TextAlign} from '../../../../components/styled/Text';
 import {SwapCryptoCoin} from '../screens/SwapCryptoRoot';
 import {getBadgeImg} from '../../../../utils/helper-methods';
 import {SellCryptoCoin} from '../../sell-crypto/screens/SellCryptoRoot';
+import {useSafeAreaInsets} from 'react-native-safe-area-context';
+import {
+  SellCryptoGroupParamList,
+  SellCryptoScreens,
+} from '../../sell-crypto/SellCryptoGroup';
+import {SwapCryptoGroupParamList, SwapCryptoScreens} from '../SwapCryptoGroup';
 
 const GlobalSelectContainer = styled.View`
   flex: 1;
@@ -47,6 +55,11 @@ interface FromWalletSelectorModalProps {
   onDismiss: (toWallet?: any) => void;
   modalContext?: GlobalSelectModalContext;
   modalTitle?: string;
+  navigation: NavigationProp<any>;
+  route:
+    | RouteProp<WalletGroupParamList, 'GlobalSelect'>
+    | RouteProp<SellCryptoGroupParamList, SellCryptoScreens.ROOT>
+    | RouteProp<SwapCryptoGroupParamList, SwapCryptoScreens.SWAP_CRYPTO_ROOT>;
 }
 
 const FromWalletSelectorModal: React.FC<FromWalletSelectorModalProps> = ({
@@ -56,6 +69,8 @@ const FromWalletSelectorModal: React.FC<FromWalletSelectorModalProps> = ({
   onDismiss,
   modalContext,
   modalTitle,
+  navigation,
+  route,
 }) => {
   const {t} = useTranslation();
   const [swapCryptoHelpVisible, setSwapCryptoHelpVisible] = useState(false);
@@ -70,14 +85,18 @@ const FromWalletSelectorModal: React.FC<FromWalletSelectorModalProps> = ({
 
   return (
     <SheetModal
+      modalLibrary="bottom-sheet"
       isVisible={isVisible}
-      onBackdropPress={() => onDismiss(undefined)}>
+      onBackdropPress={() => onDismiss(undefined)}
+      fullscreen>
       <GlobalSelectContainer>
         <GlobalSelect
+          route={route}
+          navigation={navigation}
           useAsModal={true}
           modalTitle={modalTitle}
           customSupportedCurrencies={_customSupportedCurrencies}
-          onDismiss={onDismiss}
+          globalSelectOnDismiss={onDismiss}
           modalContext={modalContext}
           livenetOnly={livenetOnly}
           onHelpPress={onHelpPress}
@@ -88,7 +107,7 @@ const FromWalletSelectorModal: React.FC<FromWalletSelectorModalProps> = ({
           onBackdropPress={() => setSwapCryptoHelpVisible(false)}>
           <SwapCryptoHelpContainer>
             <TextAlign align={'center'}>
-              {modalContext === 'swap' ? (
+              {modalContext === 'swapFrom' ? (
                 <H4>{t('What can I swap?')}</H4>
               ) : null}
               {modalContext === 'sell' ? (
@@ -96,7 +115,7 @@ const FromWalletSelectorModal: React.FC<FromWalletSelectorModalProps> = ({
               ) : null}
             </TextAlign>
             <TextAlign align={'center'}>
-              {modalContext === 'swap' ? (
+              {modalContext === 'swapFrom' ? (
                 <SubText>{t('swapFromWalletsConditionMessage')}</SubText>
               ) : null}
               {modalContext === 'sell' ? (

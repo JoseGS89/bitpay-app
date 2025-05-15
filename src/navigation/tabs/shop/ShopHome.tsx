@@ -1,12 +1,5 @@
 import debounce from 'lodash.debounce';
-import React, {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
+import React, {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import styled from 'styled-components/native';
 import {Keyboard, RefreshControl, ScrollView} from 'react-native';
 import GiftCardCatalog from './components/GiftCardCatalog';
@@ -25,21 +18,20 @@ import {
   selectCategoriesAndCurations,
   selectCategoriesWithIntegrations,
   selectIntegrations,
-} from '../../../store/shop/shop.selectors';
+} from '../../../store/shop-catalog';
 import {useAppDispatch, useAppSelector} from '../../../utils/hooks';
 import {NativeStackScreenProps} from '@react-navigation/native-stack';
 import {ShopScreens, ShopStackParamList} from './ShopStack';
 import {useTranslation} from 'react-i18next';
-import {
-  useFocusEffect,
-  useNavigation,
-  useScrollToTop,
-} from '@react-navigation/native';
+import {useFocusEffect, useScrollToTop} from '@react-navigation/native';
+import {HeaderContainer} from '../../tabs/home/components/Styled';
 import {HeaderTitle} from '../../../components/styled/Text';
+import {HEIGHT} from '../../../components/styled/Containers';
 import {useTheme} from 'styled-components/native';
 import {SlateDark, White} from '../../../styles/colors';
 import {sleep} from '../../../utils/helper-methods';
-import {GestureHandlerRootView} from 'react-native-gesture-handler';
+import {withErrorFallback} from '../TabScreenErrorFallback';
+import TabContainer from '../TabContainer';
 
 export enum ShopTabs {
   GIFT_CARDS = 'Gift Cards',
@@ -52,10 +44,6 @@ export type ShopHomeParamList = {
 };
 
 const Tab = createMaterialTopTabNavigator();
-
-const ShopContainer = styled.SafeAreaView`
-  flex: 1;
-`;
 
 const ShopInnerContainer = styled.View`
   margin-top: 15px;
@@ -77,7 +65,12 @@ const getGiftCardsScrollViewHeight = (
   const giftCardListHeight =
     (numSelectedGiftCards || availableGiftCards.length) * giftCardItemHeight +
     giftCardsBottomPadding;
-  return staticGiftCardScrollViewHeight + giftCardListHeight;
+  const minGiftCardCatalogHeight = HEIGHT - 600;
+  const giftCardCatalogHeight = Math.max(
+    giftCardListHeight,
+    minGiftCardCatalogHeight,
+  );
+  return staticGiftCardScrollViewHeight + giftCardCatalogHeight;
 };
 
 const getShopOnlineScrollViewHeight = (categories: Category[]) => {
@@ -107,8 +100,14 @@ const ShopHome: React.FC<
 > = ({route}) => {
   const {t} = useTranslation();
   const theme = useTheme();
-  const availableCardMap = useAppSelector(({SHOP}) => SHOP.availableCardMap);
-  const supportedCardMap = useAppSelector(({SHOP}) => SHOP.supportedCardMap);
+  const showArchaxBanner = useAppSelector(({APP}) => APP.showArchaxBanner);
+  const availableCardMap = useAppSelector(
+    ({SHOP_CATALOG}) => SHOP_CATALOG.availableCardMap,
+  );
+  const supportedCardMap = useAppSelector(
+    ({SHOP_CATALOG}) => SHOP_CATALOG.supportedCardMap,
+  );
+
   const user = useAppSelector(
     ({APP, BITPAY_ID}) => BITPAY_ID.user[APP.network],
   );
@@ -140,7 +139,6 @@ const ShopHome: React.FC<
     () => getGiftCardConfigList(supportedCardMap || availableCardMap),
     [supportedCardMap, availableCardMap],
   );
-  const navigation = useNavigation();
 
   const curations = useMemo(
     () =>
@@ -152,12 +150,6 @@ const ShopHome: React.FC<
     [availableGiftCards, categoriesAndCurations, purchasedGiftCards],
   );
 
-  useLayoutEffect(() => {
-    navigation.setOptions({
-      headerLeft: () => null,
-      headerTitle: () => <HeaderTitle>{t('Pay with Crypto')}</HeaderTitle>,
-    });
-  }, [navigation, t]);
   const integrations = useAppSelector(selectIntegrations);
   const categories = useAppSelector(selectCategories);
   const categoriesWitIntegrations = useAppSelector(
@@ -265,74 +257,77 @@ const ShopHome: React.FC<
     curations,
   ]);
 
-  useFocusEffect(() => {
-    if (!initialSyncComplete) {
-      dispatch(ShopEffects.startSyncGiftCards());
-      setInitialSyncComplete(true);
-    }
-  });
+  useFocusEffect(
+    useCallback(() => {
+      if (!initialSyncComplete) {
+        dispatch(ShopEffects.startSyncGiftCards());
+        setInitialSyncComplete(true);
+      }
+    }, [initialSyncComplete]),
+  );
 
   return (
-    <GestureHandlerRootView style={{flex: 1}}>
-      <ShopContainer>
-        <ScrollView
-          ref={scrollViewRef}
-          keyboardDismissMode="on-drag"
-          keyboardShouldPersistTaps="handled"
-          onScrollBeginDrag={Keyboard.dismiss}
-          refreshControl={
-            user ? (
-              <RefreshControl
-                tintColor={theme.dark ? White : SlateDark}
-                refreshing={refreshing}
-                onRefresh={async () => {
-                  setRefreshing(true);
-                  await Promise.all([
-                    dispatch(ShopEffects.startSyncGiftCards()),
-                    sleep(600),
-                  ]);
-                  setRefreshing(false);
-                }}
-              />
-            ) : undefined
-          }>
-          <ShopInnerContainer>
-            <Tab.Navigator
-              style={{
-                height: scrollViewHeight,
+    <TabContainer>
+      <HeaderContainer>
+        <HeaderTitle>{t('Pay with Crypto')}</HeaderTitle>
+      </HeaderContainer>
+      <ScrollView
+        ref={scrollViewRef}
+        keyboardDismissMode="on-drag"
+        keyboardShouldPersistTaps="handled"
+        onScrollBeginDrag={Keyboard.dismiss}
+        refreshControl={
+          user ? (
+            <RefreshControl
+              tintColor={theme.dark ? White : SlateDark}
+              refreshing={refreshing}
+              onRefresh={async () => {
+                setRefreshing(true);
+                await Promise.all([
+                  dispatch(ShopEffects.startSyncGiftCards()),
+                  sleep(600),
+                ]);
+                setRefreshing(false);
               }}
-              screenOptions={ScreenOptions({
-                fontSize: 16,
-                marginHorizontal: 5,
-                numTabs: 2,
-                tabWidth: 120,
-                langAdjustments: true, 
-              })}
-              screenListeners={{
-                tabPress: tab => {
-                  if (tab.target) {
-                    setActiveTab(
-                      tab.target.includes(ShopTabs.GIFT_CARDS)
-                        ? ShopTabs.GIFT_CARDS
-                        : ShopTabs.SHOP_ONLINE,
-                    );
-                  }
-                },
-              }}>
-              <Tab.Screen
-                name={t('Gift Cards')}
-                component={memoizedGiftCardCatalog}
-              />
-              <Tab.Screen
-                name={t('Shop Online')}
-                component={memoizedShopOnline}
-              />
-            </Tab.Navigator>
-          </ShopInnerContainer>
-        </ScrollView>
-      </ShopContainer>
-    </GestureHandlerRootView>
+            />
+          ) : undefined
+        }>
+        <ShopInnerContainer>
+          <Tab.Navigator
+            style={{
+              height: scrollViewHeight,
+            }}
+            screenOptions={ScreenOptions({
+              fontSize: 16,
+              marginHorizontal: 5,
+              numTabs: 2,
+              tabWidth: 120,
+              langAdjustments: true,
+            })}
+            screenListeners={{
+              tabPress: tab => {
+                if (tab.target) {
+                  setActiveTab(
+                    tab.target.includes(ShopTabs.GIFT_CARDS)
+                      ? ShopTabs.GIFT_CARDS
+                      : ShopTabs.SHOP_ONLINE,
+                  );
+                }
+              },
+            }}>
+            <Tab.Screen
+              name={t('Gift Cards')}
+              component={memoizedGiftCardCatalog}
+            />
+            <Tab.Screen
+              name={t('Shop Online')}
+              component={memoizedShopOnline}
+            />
+          </Tab.Navigator>
+        </ShopInnerContainer>
+      </ScrollView>
+    </TabContainer>
   );
 };
 
-export default ShopHome;
+export default withErrorFallback(ShopHome);

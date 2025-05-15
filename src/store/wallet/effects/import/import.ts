@@ -26,12 +26,10 @@ import {
   deleteKey,
   failedImport,
   setCustomizeNonce,
-  setEnableReplaceByFee,
   setUseUnconfirmedFunds,
   setWalletTermsAccepted,
   successImport,
   updateCacheFeeLevel,
-  updatePortfolioBalance,
 } from '../../wallet.actions';
 import {
   BitpaySupportedEthereumTokenOptsByAddress,
@@ -95,13 +93,17 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import RNRestart from 'react-native-restart';
 import uniqBy from 'lodash.uniqby';
 import {credentialsFromExtendedPublicKey} from '../../../../utils/wallet-hardware';
-import {sleep} from '../../../../utils/helper-methods';
 import {BitpaySupportedCoins} from '../../../../constants/currencies';
 import {
   GetName,
   IsSegwitCoin,
   isSingleAddressChain,
 } from '../../utils/currency';
+import {BASE_BWS_URL} from '../../../../constants/config';
+import {
+  createWalletsForAccounts,
+  getEvmGasWallets,
+} from '../../../../utils/helper-methods';
 
 const BWC = BwcProvider.getInstance();
 const BwcConstants = BWC.getConstants();
@@ -203,7 +205,9 @@ export const startMigration =
 
         const profile = JSON.parse(
           await RNFS.readFile(cordovaStoragePath + 'profile', 'utf8'),
-        ) as {credentials: Wallet[]};
+        ) as {
+          credentials: Wallet[];
+        };
 
         // no keys
         if (!keys.length) {
@@ -271,7 +275,12 @@ export const startMigration =
 
         // update store with token rates from coin gecko and update balances
         await dispatch(startGetRates({force: true}));
-        await dispatch(startUpdateAllKeyAndWalletStatus({force: true}));
+        await dispatch(
+          startUpdateAllKeyAndWalletStatus({
+            context: 'startMigration',
+            force: true,
+          }),
+        );
         dispatch(
           LogActions.info(
             '[startMigration] - success migration keys and wallets',
@@ -843,7 +852,19 @@ export const startImportMnemonic =
         opts.xPrivKey = xPrivKey;
 
         const data = await serverAssistedImport(opts);
-
+        // we need to ensure that each evm account has all supported wallets attached.
+        const evmWallets = getEvmGasWallets(data.wallets);
+        const accountsArray = [
+          ...new Set(evmWallets.map(wallet => wallet.credentials.account)),
+        ];
+        const _wallets = await createWalletsForAccounts(
+          dispatch,
+          accountsArray,
+          data.key as KeyMethods,
+        );
+        if (_wallets.length > 0) {
+          data.wallets.push(..._wallets);
+        }
         // To Avoid Duplicate wallet import
         const {
           key: _key,
@@ -921,6 +942,7 @@ export const startImportFromHardwareWallet =
     publicKey,
     accountPath,
     coin,
+    chain,
     derivationStrategy,
     accountNumber,
     network,
@@ -931,6 +953,17 @@ export const startImportFromHardwareWallet =
     publicKey?: string;
     accountPath: string;
     coin: 'btc' | 'eth' | 'xrp' | 'bch' | 'ltc' | 'doge' | 'matic';
+    chain:
+      | 'btc'
+      | 'eth'
+      | 'xrp'
+      | 'bch'
+      | 'ltc'
+      | 'doge'
+      | 'matic'
+      | 'arb'
+      | 'op'
+      | 'base';
     derivationStrategy: string;
     accountNumber: number;
     network: Network;
@@ -952,7 +985,8 @@ export const startImportFromHardwareWallet =
       const walletExists = key?.wallets.some(
         w =>
           w.credentials.rootPath === accountPath &&
-          w.credentials.coin === coin &&
+          w.currencyAbbreviation === coin &&
+          w.chain === chain &&
           w.credentials.account === accountNumber &&
           w.credentials.network === network,
       );
@@ -962,9 +996,10 @@ export const startImportFromHardwareWallet =
       }
 
       const hwKeyId = key.id;
-      const name = dispatch(GetName(coin, coin)); // chain === coin for stored wallets
+      const name = dispatch(GetName(coin, chain));
       const credentials = credentialsFromExtendedPublicKey(
         coin,
+        chain,
         accountNumber,
         accountPath,
         name,
@@ -1000,6 +1035,7 @@ export const startImportFromHardwareWallet =
             network,
             useNativeSegwit,
             coin,
+            chain,
             walletPrivKey: credentials.walletPrivKey,
             singleAddress,
           };
@@ -1338,6 +1374,7 @@ const createKeyAndCredentials = async (
 ): Promise<any> => {
   let key: any;
   const coin = opts.coin as string;
+  const chain = opts.chain as string;
   const network = opts.networkName || 'livenet';
   const account = opts.account || 0;
   const n = opts.n || 1;
@@ -1359,7 +1396,7 @@ const createKeyAndCredentials = async (
       bwcClient.fromString(
         key.createCredentials(undefined, {
           coin,
-          chain: coin, // chain === coin for stored clients
+          chain, // chain === coin for stored clients. THIS IS NO TRUE ANYMORE
           network,
           account,
           n,
@@ -1380,7 +1417,7 @@ const createKeyAndCredentials = async (
       bwcClient.fromString(
         key.createCredentials(undefined, {
           coin,
-          chain: coin, // chain === coin for stored clients
+          chain, // chain === coin for stored clients. THIS IS NO TRUE ANYMORE
           network,
           account,
           n,
@@ -1495,7 +1532,7 @@ export const serverAssistedImport = async (
     try {
       BwcProvider.API.serverAssistedImport(
         opts,
-        {baseUrl: 'https://bws.bitpay.com/bws/api'}, // 'http://localhost:3232/bws/api', uncomment for local testing
+        {baseUrl: BASE_BWS_URL},
         // @ts-ignore
         async (err, key, wallets) => {
           if (err) {
@@ -1526,6 +1563,7 @@ export const serverAssistedImport = async (
     }
   });
 };
+
 const linkTokenToWallet = (tokens: Wallet[], wallets: Wallet[]) => {
   tokens.forEach(token => {
     // find the associated wallet to add tokens too

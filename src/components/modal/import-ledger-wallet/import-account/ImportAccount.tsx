@@ -9,6 +9,11 @@ interface ImportAccountProps {
   setHardwareWalletTransport: React.Dispatch<
     React.SetStateAction<Transport | null>
   >;
+  setScannedWalletsIds: React.Dispatch<
+    React.SetStateAction<string[] | undefined>
+  >;
+  scannedWalletsIds: string[] | undefined;
+
   onDisconnect: () => Promise<void>;
   onComplete: () => void;
 }
@@ -18,16 +23,15 @@ export const ImportAccount: React.FC<ImportAccountProps> = props => {
     useState<boolean>(false);
   const [addByDerivationPath, setAddByDerivationPath] =
     useState<boolean>(false);
-  const [scannedWalletsIds, setScannedWalletsIds] = useState<string[]>();
-  const [selectedCurrency, setSelectedCurrency] = useState<string>('btc');
+  const [selectedChain, setSelectedChain] = useState<string>('btc');
 
   const onScannedCompleted = (
-    selectedCurrency: string,
+    selectedChain: string,
     scannedWalletsIds?: string[],
   ) => {
     setShowSelectWalletsToImport(true);
-    setSelectedCurrency(selectedCurrency);
-    setScannedWalletsIds(scannedWalletsIds);
+    setSelectedChain(selectedChain);
+    props.setScannedWalletsIds(scannedWalletsIds);
   };
 
   const onAddByDerivationPathSelected = () => {
@@ -39,7 +43,7 @@ export const ImportAccount: React.FC<ImportAccountProps> = props => {
       <SelectWalletsToImport
         onComplete={props.onComplete}
         onAddByDerivationPathSelected={onAddByDerivationPathSelected}
-        scannedWalletsIds={scannedWalletsIds}
+        scannedWalletsIds={props.scannedWalletsIds}
       />
     ) : (
       <AddByDerivationPath
@@ -48,16 +52,27 @@ export const ImportAccount: React.FC<ImportAccountProps> = props => {
         onDisconnect={props.onDisconnect}
         onComplete={props.onComplete}
         onAddByDerivationPathSelected={onAddByDerivationPathSelected}
-        selectedCurrency={selectedCurrency}
-        scannedWalletsIds={scannedWalletsIds}
+        selectedChain={selectedChain}
+        scannedWalletsIds={props.scannedWalletsIds}
       />
     )
+  ) : addByDerivationPath ? (
+    <AddByDerivationPath
+      transport={props.transport}
+      setHardwareWalletTransport={props.setHardwareWalletTransport}
+      onDisconnect={props.onDisconnect}
+      onComplete={props.onComplete}
+      onAddByDerivationPathSelected={onAddByDerivationPathSelected}
+      selectedChain={selectedChain}
+      scannedWalletsIds={props.scannedWalletsIds}
+    />
   ) : (
     <SelectLedgerCurrency
       transport={props.transport}
       setHardwareWalletTransport={props.setHardwareWalletTransport}
       onDisconnect={props.onDisconnect}
       onScannedCompleted={onScannedCompleted}
+      onAddByDerivationPathSelected={onAddByDerivationPathSelected}
     />
   );
 };

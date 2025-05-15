@@ -1,4 +1,4 @@
-import React, {useCallback, useContext, useState} from 'react';
+import React, {useCallback, useContext, useEffect, useState} from 'react';
 import {
   ActiveOpacity,
   CtaContainer as _CtaContainer,
@@ -21,9 +21,11 @@ import debounce from 'lodash.debounce';
 import {
   CheckIfLegacyBCH,
   ValidDataTypes,
+  ValidateCoinAddress,
   ValidateURI,
 } from '../../../store/wallet/utils/validations';
-import {FlatList, TouchableOpacity, View} from 'react-native';
+import {FlatList, View} from 'react-native';
+import {TouchableOpacity} from '@components/base/TouchableOpacity';
 import haptic from '../../../components/haptic-feedback/haptic';
 import ScanSvg from '../../../../assets/img/onboarding/scan.svg';
 import {
@@ -42,8 +44,8 @@ import KeyWalletsRow, {
   KeyWallet,
   KeyWalletsRowProps,
 } from '../../../components/list/KeyWalletsRow';
-import {BuildKeyWalletRow} from '../screens/send/SendTo';
-import {useAppDispatch, useAppSelector} from '../../../utils/hooks';
+import {BuildKeyAccountRow} from '../screens/send/SendTo';
+import {useAppDispatch, useAppSelector, useLogger} from '../../../utils/hooks';
 import {
   RecipientList,
   RecipientRowContainer,
@@ -81,6 +83,7 @@ const SendToAddress = () => {
   const dispatch = useAppDispatch();
   const {t} = useTranslation();
   const theme = useTheme();
+  const logger = useLogger();
   const placeHolderTextColor = theme.dark ? NeutralSlate : '#6F7782';
   const [searchInput, setSearchInput] = useState('');
   const [errorMessage, setErrorMessage] = useState('');
@@ -88,6 +91,7 @@ const SendToAddress = () => {
   const {keys} = useAppSelector(({WALLET}: RootState) => WALLET);
   const {rates} = useAppSelector(({RATE}) => RATE);
   const {
+    sendTo,
     recipientList,
     setRecipientListContext,
     setRecipientAmountContext,
@@ -99,7 +103,7 @@ const SendToAddress = () => {
   const {wallet, context} = route.params;
   const {currencyAbbreviation, id, network, chain} = wallet;
 
-  const keyWallets: KeyWalletsRowProps<KeyWallet>[] = BuildKeyWalletRow(
+  const keyAccounts: KeyWalletsRowProps[] = BuildKeyAccountRow(
     keys,
     id,
     currencyAbbreviation,
@@ -109,6 +113,7 @@ const SendToAddress = () => {
     searchInput,
     rates,
     dispatch,
+    logger,
   );
 
   const onErrorMessageDismiss = () => {
@@ -130,15 +135,10 @@ const SendToAddress = () => {
   const checkCoinAndNetwork =
     (data: any): Effect<boolean> =>
     dispatch => {
-      const addrData = GetCoinAndNetwork(data, network, chain);
-      const isValid =
-        chain === addrData?.coin.toLowerCase() && addrData?.network === network;
+      const isValid = ValidateCoinAddress(data, chain, network);
 
       if (isValid) {
-        return true;
-      } else {
-        // @ts-ignore
-        if (currencyAbbreviation === 'bch' && network === addrData?.network) {
+        if (currencyAbbreviation === 'bch') {
           const isLegacy = CheckIfLegacyBCH(data);
           if (isLegacy) {
             const appName = APP_NAME_UPPERCASE;
@@ -146,20 +146,17 @@ const SendToAddress = () => {
             dispatch(
               showBottomNotificationModal(
                 BchLegacyAddressInfo(appName, () => {
+                  // TODO: This doesn't seem to work
                   BchLegacyAddressInfoDismiss(data);
+                  return false;
                 }),
               ),
             );
-          } else {
-            dispatch(
-              showBottomNotificationModal(Mismatch(onErrorMessageDismiss)),
-            );
           }
-        } else {
-          dispatch(
-            showBottomNotificationModal(Mismatch(onErrorMessageDismiss)),
-          );
         }
+        return true;
+      } else {
+        dispatch(showBottomNotificationModal(Mismatch(onErrorMessageDismiss)));
       }
       return false;
     };
@@ -245,6 +242,16 @@ const SendToAddress = () => {
     [wallet, setRecipientListContext, setRecipientAmountContext],
   );
 
+  useEffect(() => {
+    const checkAddressForSelectInputOption = async () => {
+      if (sendTo?.address) {
+        await sleep(1000);
+        validateData(sendTo.address);
+      }
+    };
+    checkAddressForSelectInputOption();
+  }, []);
+
   return (
     <>
       <SendToAddressContainer>
@@ -322,7 +329,7 @@ const SendToAddress = () => {
       <ScrollViewContainer>
         <View style={{marginTop: 10}}>
           <KeyWalletsRow
-            keyWallets={keyWallets}
+            keyAccounts={keyAccounts}
             hideBalance={hideAllBalances}
             onPress={(selectedWallet: KeyWallet) => {
               onSendToWallet(selectedWallet);

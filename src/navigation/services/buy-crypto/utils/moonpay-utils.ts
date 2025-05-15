@@ -1,5 +1,9 @@
 import {t} from 'i18next';
+import cloneDeep from 'lodash.clonedeep';
+import {MoonpayPaymentType} from '../../../../store/buy-crypto/buy-crypto.models';
 import {getCurrencyAbbreviation} from '../../../../utils/helper-methods';
+import {externalServicesCoinMapping} from '../../utils/external-services-utils';
+import {PaymentMethodKey} from '../constants/BuyCryptoConstants';
 
 export const moonpayEnv = __DEV__ ? 'sandbox' : 'production';
 
@@ -52,9 +56,13 @@ export const moonpaySupportedCoins = [
   'btc',
   'bch',
   'eth',
+  'eth_arb', // eth_arbitrum in Moonpay
+  'eth_base', // eth_base in Moonpay
+  'eth_op', // eth_optimism in Moonpay
   'ltc',
   'doge',
-  'matic', // matic_polygon in Moonpay
+  'matic', // pol_polygon in Moonpay // backward compatibility
+  'pol', // pol_polygon in Moonpay
 ];
 
 export const nonUSMoonpaySupportedCoins = ['xrp'];
@@ -62,39 +70,93 @@ export const nonUSMoonpaySupportedCoins = ['xrp'];
 export const moonpaySupportedErc20Tokens = [
   'bat',
   'dai',
-  'orn',
+  'gods',
+  'imx',
+  'link',
+  'mana',
+  'matic', // backward compatibility
+  'pixel',
+  'pol',
+  'pyusd',
+  'steth',
   'shib',
-  'tusd',
+  'uni',
   'usdc',
   'usdt',
+  'venom',
   'zrx',
 ];
 
 export const nonUSMoonpaySupportedErc20Tokens = [
   'aave',
   'ape',
+  'axs',
+  'chz',
+  'comp',
+  'floki',
+  'key',
+  'looks',
   'mana',
-  'matic',
+  'mkr',
+  'okb',
+  'om',
+  'omg',
+  'pepe',
+  'portal',
   'sand',
+  'slp',
+  'snx',
+  'stmx',
+  'tusd',
   'uni',
+  'utk',
+  'verse',
   'wbtc',
   'weth',
+  'wld',
 ];
 
-export const moonpaySupportedMaticTokens = [];
+export const moonpaySupportedMaticTokens = [
+  'sand', // sand_polygon in Moonpay
+  'usdc', // usdc_polygon in Moonpay
+  'usdt', // usdt_polygon in Moonpay
+  'voxel', // voxel_polygon in Moonpay
+  'weth', // eth_polygon in Moonpay
+];
+
+export const moonpaySupportedArbitrumTokens = [
+  'magic', // magic_arbitrum in Moonpay
+  'usdc', // usdc_arbitrum in Moonpay
+];
+
+export const moonpaySupportedBaseTokens = [
+  'usdc', // usdc_base in Moonpay
+];
+
+export const moonpaySupportedOptimismTokens = [
+  'usdc', // usdc_optimism in Moonpay
+  'wld', // wld_optimism in Moonpay
+];
 
 export const getMoonpaySupportedCurrencies = (country?: string): string[] => {
-  let moonpaySupportedCurrencies = moonpaySupportedCoins
-    .concat(
-      moonpaySupportedErc20Tokens.map(ethToken => {
-        return getCurrencyAbbreviation(ethToken, 'eth');
-      }),
-    )
-    .concat(
-      moonpaySupportedMaticTokens.map(maticToken => {
-        return getCurrencyAbbreviation(maticToken, 'matic');
-      }),
-    );
+  let moonpaySupportedCurrencies = [
+    ...moonpaySupportedCoins,
+    ...moonpaySupportedErc20Tokens.flatMap(ethToken =>
+      getCurrencyAbbreviation(ethToken, 'eth'),
+    ),
+    ...moonpaySupportedMaticTokens.flatMap(maticToken =>
+      getCurrencyAbbreviation(maticToken, 'matic'),
+    ),
+    ...moonpaySupportedArbitrumTokens.flatMap(arbitrumToken =>
+      getCurrencyAbbreviation(arbitrumToken, 'arb'),
+    ),
+    ...moonpaySupportedBaseTokens.flatMap(baseToken =>
+      getCurrencyAbbreviation(baseToken, 'base'),
+    ),
+    ...moonpaySupportedOptimismTokens.flatMap(optimismToken =>
+      getCurrencyAbbreviation(optimismToken, 'op'),
+    ),
+  ];
 
   if (country !== 'US') {
     moonpaySupportedCurrencies = moonpaySupportedCurrencies.concat(
@@ -114,17 +176,57 @@ export const getMoonpayFixedCurrencyAbbreviation = (
   currency: string,
   chain: string,
 ): string => {
-  if (currency === 'matic' && chain === 'matic') {
-    return 'matic_polygon';
-  } else {
-    return currency;
+  let coin = cloneDeep(currency).toLowerCase();
+  coin = externalServicesCoinMapping(coin);
+
+  switch (chain) {
+    case 'matic':
+      return coin + '_polygon';
+    case 'arb':
+      return coin + '_arbitrum';
+    case 'base':
+      return coin + '_base';
+    case 'op':
+      return coin + '_optimism';
+    default:
+      return coin;
   }
+};
+
+export const getMoonpayPaymentMethodFormat = (
+  method: PaymentMethodKey,
+): MoonpayPaymentType | undefined => {
+  let moonpayPaymentMethod: MoonpayPaymentType | undefined;
+  if (method) {
+    switch (method) {
+      case 'debitCard':
+      case 'creditCard':
+        moonpayPaymentMethod = 'credit_debit_card';
+        break;
+      case 'sepaBankTransfer':
+        moonpayPaymentMethod = 'sepa_bank_transfer';
+        break;
+      case 'applePay':
+        moonpayPaymentMethod = 'mobile_wallet';
+        break;
+      case 'paypal':
+        moonpayPaymentMethod = 'paypal';
+        break;
+      case 'venmo':
+        moonpayPaymentMethod = 'venmo';
+        break;
+      default:
+        moonpayPaymentMethod = undefined;
+        break;
+    }
+  }
+  return moonpayPaymentMethod;
 };
 
 export const getMoonpayFiatAmountLimits = () => {
   return {
     min: 30,
-    max: 12000,
+    max: 30000,
   };
 };
 

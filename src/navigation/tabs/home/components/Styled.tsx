@@ -5,7 +5,7 @@ import {Black, Slate, White} from '../../../../styles/colors';
 
 export const HeaderContainer = styled.View`
   flex-direction: row;
-  justify-content: flex-end;
+  justify-content: center;
   align-items: center;
   margin: 10px ${ScreenGutter};
 `;
@@ -16,10 +16,6 @@ export const HeaderLeftContainer = styled.View`
 
 export const HeaderButtonContainer = styled.View`
   margin-left: ${ScreenGutter};
-`;
-
-export const HomeContainer = styled.SafeAreaView`
-  flex: 1;
 `;
 
 export const HomeSectionSubtext = styled(H7)`

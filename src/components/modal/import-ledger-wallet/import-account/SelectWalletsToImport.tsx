@@ -16,12 +16,13 @@ import {
 } from '../../../../components/styled/Containers';
 import Checkbox from '../../../../components/checkbox/Checkbox';
 import WalletRow, {WalletRowProps} from '../../../../components/list/WalletRow';
-import {buildUIFormattedWallet} from '../../../../navigation/wallet/screens/KeyOverview';
 import {useAppDispatch, useAppSelector} from '../../../../utils/hooks';
 import {successCreateKey} from '../../../../store/wallet/wallet.actions';
 import styled from 'styled-components/native';
 import {useTheme} from 'styled-components/native';
 import {Slate30, SlateDark} from '../../../../styles/colors';
+import {View} from 'react-native';
+import {buildUIFormattedWallet} from '../../../../store/wallet/utils/wallet';
 
 interface Props {
   onComplete: () => void;
@@ -117,10 +118,7 @@ export const SelectWalletsToImport: React.FC<Props> = props => {
         <H4>Connect Wallets</H4>
       </Header>
 
-      <DescriptionRow
-        style={{
-          flexGrow: 0,
-        }}>
+      <DescriptionRow>
         {props.scannedWalletsIds && props.scannedWalletsIds[0] ? (
           <Paragraph style={{textAlign: 'center'}}>
             We've identified wallets on your Ledger with balances or activity.
@@ -195,13 +193,15 @@ export const SelectWalletsToImport: React.FC<Props> = props => {
         </ActionsRow>
       ) : null}
 
-      <ActionsRow>
-        <Button
-          buttonType={'link'}
-          onPress={props.onAddByDerivationPathSelected}>
-          Add by Derivation Path
-        </Button>
-      </ActionsRow>
+      <View style={{flexGrow: 1}}>
+        <ActionsRow>
+          <Button
+            buttonType={'link'}
+            onPress={props.onAddByDerivationPathSelected}>
+            Add by Derivation Path
+          </Button>
+        </ActionsRow>
+      </View>
     </Wrapper>
   );
 };

@@ -13,6 +13,7 @@ import {ScreenContainer} from '../../components/styled/ShopTabComponents';
 
 const BillListContainer = styled.View`
   padding: 15px 16px 0;
+  flex: 1;
 `;
 
 const Payments = ({
@@ -32,7 +33,9 @@ const Payments = ({
         return (
           <HeaderTitle>
             {account
-              ? t(`${account[account.type].merchantName} Payments`)
+              ? t('{{merchantName}} Payments', {
+                  merchantName: account[account.type].merchantName,
+                })
               : t('All Payments')}
           </HeaderTitle>
         );

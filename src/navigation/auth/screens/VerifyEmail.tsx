@@ -10,7 +10,7 @@ import {AuthGroupParamList, AuthScreens} from '../AuthGroup';
 import AuthFormContainer, {
   AuthFormParagraph,
 } from '../components/AuthFormContainer';
-import {SafeAreaView} from 'react-native';
+import {BackHandler, SafeAreaView} from 'react-native';
 import {RootStacks} from '../../../Root';
 import {TabsScreens} from '../../tabs/TabsStack';
 import {BitpayIdScreens} from '../../bitpay-id/BitpayIdGroup';
@@ -65,6 +65,14 @@ const VerifyEmailScreen: React.FC<VerifyEmailScreenProps> = ({navigation}) => {
       headerLeft: () => null,
     });
   }, [navigation]);
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener(
+      'hardwareBackPress',
+      () => true,
+    );
+    return () => backHandler.remove();
+  }, []);
 
   useEffect(() => {
     if (!email || !csrfToken) {
@@ -145,7 +153,9 @@ const VerifyEmailScreen: React.FC<VerifyEmailScreenProps> = ({navigation}) => {
             <VerifyEmailParagraph>
               {t(
                 'We sent a verification email to. Open the link inside to continue.',
-                {email: email || t('your email address')},
+                {
+                  email: email || t('your email address'),
+                },
               )}
             </VerifyEmailParagraph>
 

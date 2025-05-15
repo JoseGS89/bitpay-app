@@ -26,6 +26,8 @@ import {DeviceEventEmitter} from 'react-native';
 import {DeviceEmitterEvents} from '../../constants/device-emitter-events';
 import {LogActions} from '../log';
 import {getBillPayAccountDescription} from '../../navigation/tabs/shop/bill/utils';
+import {successFetchCatalog} from '../shop-catalog/shop-catalog.actions';
+
 export const startFetchCatalog = (): Effect => async (dispatch, getState) => {
   try {
     const {APP, BITPAY_ID, LOCATION, SHOP} = getState();
@@ -49,7 +51,7 @@ export const startFetchCatalog = (): Effect => async (dispatch, getState) => {
     const {data: categoriesAndCurations} = directoryResponse;
     const {data: integrations} = integrationsResponse;
     dispatch(
-      ShopActions.successFetchCatalog({
+      successFetchCatalog({
         availableCardMap: getCardConfigMapFromApiConfigMap(availableCardMap),
         categoriesAndCurations,
         integrations,
@@ -118,6 +120,19 @@ export const startSyncGiftCards =
       console.error(err);
       throw err;
     }
+  };
+
+export const redeemSyncedGiftCards =
+  (): Effect<Promise<void>> => async (dispatch, getState) => {
+    const {APP, SHOP} = getState();
+    const savedGiftCards = SHOP.giftCards[APP.network];
+    const syncedGiftCards = savedGiftCards.filter(
+      giftCard => giftCard.status === 'SYNCED',
+    );
+    const redeemPromises = syncedGiftCards
+      .slice(0, 3)
+      .map(giftCard => dispatch(startRedeemGiftCard(giftCard.invoiceId)));
+    await Promise.all(redeemPromises);
   };
 
 export const startCreateBillPayInvoice =
@@ -202,7 +217,6 @@ export const startCreateGiftCardInvoice =
         invoiceId: cardOrder.invoiceId,
         name: params.brand,
         totalDiscount: cardOrder.totalDiscount,
-        invoice: invoice,
         status: 'UNREDEEMED',
         ...(user && user.eid && {userEid: user.eid}),
       } as UnsoldGiftCard;
@@ -213,7 +227,7 @@ export const startCreateGiftCardInvoice =
         }),
       );
       return {...cardOrder, invoice} as GiftCardOrder;
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
       dispatch(ShopActions.failedCreateGiftCardInvoice());
       throw err;

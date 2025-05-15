@@ -3,10 +3,10 @@ import {
   useScrollToTop,
   useTheme,
 } from '@react-navigation/native';
-import {each} from 'lodash';
+import {each, filter} from 'lodash';
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {useTranslation} from 'react-i18next';
-import {RefreshControl, ScrollView, TouchableOpacity} from 'react-native';
+import {RefreshControl, ScrollView} from 'react-native';
 import {STATIC_CONTENT_CARDS_ENABLED} from '../../../constants/config';
 import {SupportedCurrencyOptions} from '../../../constants/SupportedCurrencyOptions';
 import {
@@ -20,8 +20,7 @@ import {
   selectBrazeShopWithCrypto,
 } from '../../../store/app/app.selectors';
 import {selectCardGroups} from '../../../store/card/card.selectors';
-import {startGetRates} from '../../../store/wallet/effects';
-import {startUpdateAllKeyAndWalletStatus} from '../../../store/wallet/effects/status/status';
+import {getAndDispatchUpdatedWalletBalances} from '../../../store/wallet/effects/status/statusv2';
 import {updatePortfolioBalance} from '../../../store/wallet/wallet.actions';
 import {SlateDark, White} from '../../../styles/colors';
 import {
@@ -49,11 +48,7 @@ import OffersCarousel from './components/offers/OffersCarousel';
 import PortfolioBalance from './components/PortfolioBalance';
 import DefaultQuickLinks from './components/quick-links/DefaultQuickLinks';
 import QuickLinksCarousel from './components/quick-links/QuickLinksCarousel';
-import {
-  HeaderContainer,
-  HeaderLeftContainer,
-  HomeContainer,
-} from './components/Styled';
+import {HeaderContainer, HeaderLeftContainer} from './components/Styled';
 import KeyMigrationFailureModal from './components/KeyMigrationFailureModal';
 import {useThemeType} from '../../../utils/hooks/useThemeType';
 import {ProposalBadgeContainer} from '../../../components/styled/Containers';
@@ -63,7 +58,9 @@ import {
   sendCrypto,
 } from '../../../store/wallet/effects/send/send';
 import {Analytics} from '../../../store/analytics/analytics.effects';
-import Icons from '../../wallet/components/WalletIcons';
+import {withErrorFallback} from '../TabScreenErrorFallback';
+import TabContainer from '../TabContainer';
+import ArchaxFooter from '../../../components/archax/archax-footer';
 
 const HomeRoot = () => {
   const {t} = useTranslation();
@@ -77,12 +74,7 @@ const HomeRoot = () => {
   const brazeQuickLinks = useAppSelector(selectBrazeQuickLinks);
   const keys = useAppSelector(({WALLET}) => WALLET.keys);
   const wallets = Object.values(keys).flatMap(k => k.wallets);
-  let pendingTxps: any = [];
-  each(wallets, x => {
-    if (x.pendingTxps) {
-      pendingTxps = pendingTxps.concat(x.pendingTxps);
-    }
-  });
+  const pendingTxps = wallets.flatMap(w => w.pendingTxps);
   const appIsLoading = useAppSelector(({APP}) => APP.appIsLoading);
   const defaultAltCurrency = useAppSelector(({APP}) => APP.defaultAltCurrency);
   const keyMigrationFailure = useAppSelector(
@@ -96,6 +88,8 @@ const HomeRoot = () => {
   const cardGroups = useAppSelector(selectCardGroups);
   const hasCards = cardGroups.length > 0;
   useBrazeRefreshOnFocus();
+
+  const showArchaxBanner = useAppSelector(({APP}) => APP.showArchaxBanner);
 
   // Shop with Crypto
   const memoizedShopWithCryptoCards = useMemo(() => {
@@ -189,13 +183,17 @@ const HomeRoot = () => {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      await dispatch(startGetRates({}));
       await Promise.all([
-        dispatch(startUpdateAllKeyAndWalletStatus({force: true})),
+        dispatch(
+          getAndDispatchUpdatedWalletBalances({
+            context: 'homeRootOnRefresh',
+            createTokenWalletWithFunds: true,
+          }),
+        ),
         dispatch(requestBrazeContentRefresh()),
         sleep(1000),
       ]);
-      dispatch(updatePortfolioBalance());
+      await sleep(2000);
     } catch (err) {
       dispatch(showBottomNotificationModal(BalanceUpdateError()));
     }
@@ -219,24 +217,11 @@ const HomeRoot = () => {
   useScrollToTop(scrollViewRef);
 
   return (
-    <HomeContainer>
+    <TabContainer>
       {appIsLoading ? null : (
-        <ScrollView
-          ref={scrollViewRef}
-          refreshControl={
-            <RefreshControl
-              tintColor={theme.dark ? White : SlateDark}
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-            />
-          }>
+        <>
           <HeaderContainer>
-            <HeaderLeftContainer>
-              <TouchableOpacity
-                onPress={() => navigation.navigate('SettingsHome')}>
-                <Icons.HomeSettings />
-              </TouchableOpacity>
-            </HeaderLeftContainer>
+            <HeaderLeftContainer />
             {pendingTxps.length ? (
               <ProposalBadgeContainer onPress={onPressTxpBadge}>
                 <ProposalBadge>{pendingTxps.length}</ProposalBadge>
@@ -245,78 +230,88 @@ const HomeRoot = () => {
             <ScanButton />
             <ProfileButton />
           </HeaderContainer>
-
-          {/* ////////////////////////////// PORTFOLIO BALANCE */}
-          {showPortfolioValue ? (
-            <HomeSection style={{marginTop: 5}} slimContainer={true}>
-              <PortfolioBalance />
-            </HomeSection>
-          ) : null}
-
-          {/* ////////////////////////////// CTA BUY SWAP RECEIVE SEND BUTTONS */}
-          {hasKeys && showPortfolioValue ? (
-            <HomeSection style={{marginBottom: 25}}>
-              <LinkingButtons
-                receive={{
-                  cta: () => dispatch(receiveCrypto(navigation, 'HomeRoot')),
-                }}
-                send={{
-                  cta: () => dispatch(sendCrypto('HomeRoot')),
-                }}
+          <ScrollView
+            ref={scrollViewRef}
+            refreshControl={
+              <RefreshControl
+                tintColor={theme.dark ? White : SlateDark}
+                refreshing={refreshing}
+                onRefresh={onRefresh}
               />
-            </HomeSection>
-          ) : null}
+            }>
+            {/* ////////////////////////////// PORTFOLIO BALANCE */}
+            {showPortfolioValue ? (
+              <HomeSection style={{marginTop: 5}} slimContainer={true}>
+                <PortfolioBalance />
+              </HomeSection>
+            ) : null}
 
-          {/* ////////////////////////////// CRYPTO */}
-          <HomeSection slimContainer={true}>
-            <Crypto />
-          </HomeSection>
+            {/* ////////////////////////////// CTA BUY SWAP RECEIVE SEND BUTTONS */}
+            {hasKeys && showPortfolioValue ? (
+              <HomeSection style={{marginBottom: 25}}>
+                <LinkingButtons
+                  receive={{
+                    cta: () => dispatch(receiveCrypto(navigation, 'HomeRoot')),
+                  }}
+                  send={{
+                    cta: () => dispatch(sendCrypto('HomeRoot')),
+                  }}
+                />
+              </HomeSection>
+            ) : null}
 
-          {/* ////////////////////////////// SHOP WITH CRYPTO */}
-          {memoizedShopWithCryptoCards.length ? (
-            <HomeSection
-              title={t('Shop with Crypto')}
-              action={t('See all')}
-              onActionPress={() => {
-                navigation.navigate('Tabs', {screen: 'Shop'});
-                dispatch(
-                  Analytics.track('Clicked Shop with Crypto', {
-                    context: 'HomeRoot',
-                  }),
-                );
-              }}>
-              <OffersCarousel contentCards={memoizedShopWithCryptoCards} />
+            {/* ////////////////////////////// CRYPTO */}
+            <HomeSection slimContainer={true}>
+              <Crypto />
             </HomeSection>
-          ) : null}
 
-          {/* ////////////////////////////// DO MORE */}
-          {memoizedDoMoreCards.length ? (
-            <HomeSection title={t('Do More')}>
-              <AdvertisementsList contentCards={memoizedDoMoreCards} />
-            </HomeSection>
-          ) : null}
+            {/* ////////////////////////////// SHOP WITH CRYPTO */}
+            {memoizedShopWithCryptoCards.length ? (
+              <HomeSection
+                title={t('Shop with Crypto')}
+                action={t('See all')}
+                onActionPress={() => {
+                  navigation.navigate('Tabs', {screen: 'Shop'});
+                  dispatch(
+                    Analytics.track('Clicked Shop with Crypto', {
+                      context: 'HomeRoot',
+                    }),
+                  );
+                }}>
+                <OffersCarousel contentCards={memoizedShopWithCryptoCards} />
+              </HomeSection>
+            ) : null}
 
-          {/* ////////////////////////////// EXCHANGE RATES */}
-          {memoizedExchangeRates.length ? (
-            <HomeSection title={t('Exchange Rates')} label="1D">
-              <ExchangeRatesList
-                items={memoizedExchangeRates}
-                defaultAltCurrencyIsoCode={defaultAltCurrency.isoCode}
-              />
-            </HomeSection>
-          ) : null}
+            {/* ////////////////////////////// DO MORE */}
+            {memoizedDoMoreCards.length ? (
+              <HomeSection title={t('Do More')}>
+                <AdvertisementsList contentCards={memoizedDoMoreCards} />
+              </HomeSection>
+            ) : null}
 
-          {/* ////////////////////////////// QUICK LINKS - Leave feedback etc */}
-          {memoizedQuickLinks.length ? (
-            <HomeSection title={t('Quick Links')}>
-              <QuickLinksCarousel contentCards={memoizedQuickLinks} />
-            </HomeSection>
-          ) : null}
-        </ScrollView>
+            {/* ////////////////////////////// EXCHANGE RATES */}
+            {memoizedExchangeRates.length ? (
+              <HomeSection title={t('Exchange Rates')} label="1D">
+                <ExchangeRatesList
+                  items={memoizedExchangeRates}
+                  defaultAltCurrencyIsoCode={defaultAltCurrency.isoCode}
+                />
+              </HomeSection>
+            ) : null}
+
+            {/* ////////////////////////////// QUICK LINKS - Leave feedback etc */}
+            {memoizedQuickLinks.length ? (
+              <HomeSection title={t('Quick Links')}>
+                <QuickLinksCarousel contentCards={memoizedQuickLinks} />
+              </HomeSection>
+            ) : null}
+            {showArchaxBanner && <ArchaxFooter />}
+          </ScrollView>
+        </>
       )}
       <KeyMigrationFailureModal />
-    </HomeContainer>
+    </TabContainer>
   );
 };
 
-export default HomeRoot;
+export default withErrorFallback(HomeRoot, {includeHeader: true});

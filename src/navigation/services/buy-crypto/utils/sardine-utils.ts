@@ -1,6 +1,7 @@
 import {t} from 'i18next';
 import {SardinePaymentType} from '../../../../store/buy-crypto/buy-crypto.models';
 import {getCurrencyAbbreviation} from '../../../../utils/helper-methods';
+import {externalServicesCoinMapping} from '../../utils/external-services-utils';
 import {PaymentMethodKey} from '../constants/BuyCryptoConstants';
 
 export const sardineEnv = __DEV__ ? 'sandbox' : 'production';
@@ -54,8 +55,11 @@ export const sardineSupportedCoins = [
   'btc',
   'bch',
   'eth',
+  'eth_arb',
   'doge',
   'ltc',
+  'matic', // backward compatibility
+  'pol',
   'xrp',
 ];
 
@@ -71,11 +75,12 @@ export const sardineSupportedErc20Tokens = [
   'knc',
   'link',
   'mana',
-  'matic',
+  'matic', // backward compatibility
   'mkr',
   'omg',
   'pax', // backward compatibility
   'paxg',
+  'pol',
   'sand',
   'shib',
   'tusd',
@@ -89,22 +94,27 @@ export const sardineSupportedErc20Tokens = [
 
 export const sardineSupportedMaticTokens = ['usdc'];
 
+export const sardineSupportedArbitrumTokens = ['usdc'];
+
 export const getSardineSupportedCurrencies = (): string[] => {
-  const sardineSupportedCurrencies = sardineSupportedCoins
-    .concat(
-      sardineSupportedErc20Tokens.map(ethToken => {
-        return getCurrencyAbbreviation(ethToken, 'eth');
-      }),
-    )
-    .concat(
-      sardineSupportedMaticTokens.map(maticToken => {
-        return getCurrencyAbbreviation(maticToken, 'matic');
-      }),
-    );
+  const sardineSupportedCurrencies = [
+    ...sardineSupportedCoins,
+    ...sardineSupportedErc20Tokens.flatMap(ethToken =>
+      getCurrencyAbbreviation(ethToken, 'eth'),
+    ),
+    ...sardineSupportedMaticTokens.flatMap(maticToken =>
+      getCurrencyAbbreviation(maticToken, 'matic'),
+    ),
+    ...sardineSupportedArbitrumTokens.flatMap(arbitrumToken =>
+      getCurrencyAbbreviation(arbitrumToken, 'arb'),
+    ),
+  ];
+
   return sardineSupportedCurrencies;
 };
 
 export const getSardineCoinFormat = (coin: string): string => {
+  coin = externalServicesCoinMapping(coin);
   let formattedCoin: string = `${coin.toUpperCase()}`;
   return formattedCoin;
 };
@@ -115,6 +125,9 @@ export const getSardineChainFormat = (chain: string): string | undefined => {
   }
   let formattedChain: string | undefined;
   switch (chain.toLowerCase()) {
+    case 'arb':
+      formattedChain = 'arbitrum';
+      break;
     case 'btc':
       formattedChain = 'bitcoin';
       break;
@@ -154,6 +167,9 @@ export const getSardinePaymentMethodFormat = (
   switch (method) {
     case 'ach':
       formattedPaymentMethod = 'ach';
+      break;
+    case 'applePay':
+      formattedPaymentMethod = 'apple_pay';
       break;
     case 'debitCard':
       formattedPaymentMethod =
